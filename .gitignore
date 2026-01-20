@@ -8,3 +8,12 @@ wheels/
 
 # Virtual environments
 .venv
+.env
+
+# Streamlit / app artifacts
+logs/
+*.log
+.streamlit/
+
+# Test artifacts
+.pytest_cache/
