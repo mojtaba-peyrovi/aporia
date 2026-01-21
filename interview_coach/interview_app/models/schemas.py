@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 Seniority = Literal["intern", "junior", "mid", "senior", "lead", "manager", "director", "unknown"]
+QuestionCategory = Literal["behavioral", "technical", "case", "situational", "mixed"]
+QuestionDifficulty = Literal["easy", "medium", "hard"]
 
 
 class CandidateProfile(BaseModel):
@@ -23,6 +25,31 @@ class CandidateProfile(BaseModel):
     gaps_or_risks: list[str] = Field(default_factory=list)
     summary: str = ""
     keywords: list[str] = Field(default_factory=list)
+
+
+class InterviewQuestion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question_text: str
+    category: QuestionCategory = "mixed"
+    difficulty: QuestionDifficulty = "medium"
+    what_good_looks_like: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+
+class ScoreCard(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    correctness: int = Field(ge=0, le=5)
+    depth: int = Field(ge=0, le=5)
+    structure: int = Field(ge=0, le=5)
+    communication: int = Field(ge=0, le=5)
+    role_relevance: int = Field(ge=0, le=5)
+    strengths: list[str] = Field(default_factory=list)
+    improvements: list[str] = Field(default_factory=list)
+    red_flags: list[str] = Field(default_factory=list)
+    suggested_rewrite: str | None = None
+    followup_question: str = ""
 
 
 ARISTOTLE_FALLACIES: tuple[str, ...] = (
@@ -56,4 +83,3 @@ ARISTOTLE_FALLACY_EXPLANATIONS: dict[str, str] = {
     "affirming_the_consequent": "If P then Q; Q; therefore P.",
     "many_questions": "A loaded question presupposes disputed claims.",
 }
-

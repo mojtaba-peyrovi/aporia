@@ -16,3 +16,5 @@
 ### 2026-01-20
 - Initialized Step 1 scaffold: logging-to-disk, CV parsing service, CandidateProfile schema, Streamlit skeleton, and unit tests.
 
+### 2026-01-21
+- Implemented Step 2: interview loop state machine, prompt modes catalog, InterviewQuestion/ScoreCard schemas, and Agent2 (with PydanticAI/OpenAI fallback) plus tests.
