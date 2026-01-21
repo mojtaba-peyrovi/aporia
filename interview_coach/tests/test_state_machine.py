@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from interview_app.models.schemas import InterviewQuestion, ScoreCard
+from interview_app.models.schemas import FallacyHint, InterviewQuestion, ScoreCard, UNCERTAINTY_DISCLAIMER
 from interview_app.session_state import new_interview_state, reset_interview, start_interview, submit_answer
 
 
@@ -25,6 +25,16 @@ def _scorecard() -> ScoreCard:
     )
 
 
+def _fallacy_hint() -> FallacyHint:
+    return FallacyHint(
+        hint_level="light",
+        coach_hint_text="Possible equivocation — clarify key terms.",
+        possible_fallacies=[],
+        more_info_text=UNCERTAINTY_DISCLAIMER,
+        suggested_rewrite=None,
+    )
+
+
 def test_start_and_submit_answer_appends_transcript() -> None:
     state = new_interview_state()
     assert state["current_question"] is None
@@ -33,17 +43,18 @@ def test_start_and_submit_answer_appends_transcript() -> None:
     assert state["current_question"]["question_text"] == "Q1"
     assert state["transcript"] == []
 
-    submit_answer(state, answer="A1", scorecard=_scorecard(), next_question=_question("Q2"))
+    submit_answer(state, answer="A1", scorecard=_scorecard(), next_question=_question("Q2"), fallacy_hint=_fallacy_hint())
     assert len(state["transcript"]) == 1
     assert state["transcript"][0]["question"]["question_text"] == "Q1"
     assert state["current_question"]["question_text"] == "Q2"
     assert state["last_scorecard"]["correctness"] == 3
+    assert state["last_fallacy_hint"]["hint_level"] == "light"
 
 
 def test_submit_requires_current_question() -> None:
     state = new_interview_state()
     with pytest.raises(ValueError, match="No current question"):
-        submit_answer(state, answer="A", scorecard=_scorecard(), next_question=None)
+        submit_answer(state, answer="A", scorecard=_scorecard(), next_question=None, fallacy_hint=None)
 
 
 def test_reset_preserves_mode_and_jd() -> None:
@@ -56,4 +67,3 @@ def test_reset_preserves_mode_and_jd() -> None:
     assert state["prompt_mode"] == "friendly"
     assert state["current_question"] is None
     assert state["transcript"] == []
-

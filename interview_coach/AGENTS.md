@@ -18,3 +18,6 @@
 
 ### 2026-01-21
 - Implemented Step 2: interview loop state machine, prompt modes catalog, InterviewQuestion/ScoreCard schemas, and Agent2 (with PydanticAI/OpenAI fallback) plus tests.
+
+### 2026-01-21
+- Implemented Step 3: fallacy hint schema + Agent3, safety guards (validation + optional OpenAI moderation), UI coach hint banner + “More info”, and added tests.

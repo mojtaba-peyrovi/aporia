@@ -3,7 +3,15 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from interview_app.models.schemas import CandidateProfile, InterviewQuestion, ScoreCard
+from interview_app.models.schemas import (
+    ARISTOTLE_FALLACIES,
+    CandidateProfile,
+    FallacyHint,
+    InterviewQuestion,
+    PossibleFallacy,
+    ScoreCard,
+    UNCERTAINTY_DISCLAIMER,
+)
 
 
 def test_candidate_profile_defaults() -> None:
@@ -59,3 +67,36 @@ def test_scorecard_range_validation() -> None:
                 "followup_question": "",
             }
         )
+
+
+def test_fallacy_hint_requires_uncertainty_disclaimer() -> None:
+    hint = FallacyHint(
+        hint_level="none",
+        coach_hint_text="",
+        possible_fallacies=[],
+        more_info_text=UNCERTAINTY_DISCLAIMER,
+        suggested_rewrite=None,
+    )
+    assert UNCERTAINTY_DISCLAIMER in hint.more_info_text
+
+    with pytest.raises(ValidationError):
+        FallacyHint(
+            hint_level="light",
+            coach_hint_text="Possible issue.",
+            possible_fallacies=[],
+            more_info_text="No disclaimer here.",
+            suggested_rewrite=None,
+        )
+
+
+def test_possible_fallacy_type_validation() -> None:
+    pf = PossibleFallacy(
+        type=ARISTOTLE_FALLACIES[0],
+        excerpt="...",
+        short_explanation="...",
+        confidence=0.5,
+    )
+    assert pf.type in ARISTOTLE_FALLACIES
+
+    with pytest.raises(ValidationError):
+        PossibleFallacy(type="not_a_fallacy", excerpt="", short_explanation="", confidence=0.2)

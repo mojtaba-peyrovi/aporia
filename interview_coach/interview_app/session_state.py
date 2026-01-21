@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from interview_app.models.schemas import InterviewQuestion, ScoreCard
+from interview_app.models.schemas import FallacyHint, InterviewQuestion, ScoreCard
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,7 @@ def new_interview_state() -> dict[str, Any]:
         "interview_started": False,
         "current_question": None,
         "last_scorecard": None,
+        "last_fallacy_hint": None,
         "transcript": [],
     }
 
@@ -28,6 +29,7 @@ def start_interview(state: dict[str, Any], first_question: InterviewQuestion) ->
     state["interview_started"] = True
     state["current_question"] = first_question.model_dump()
     state["last_scorecard"] = None
+    state["last_fallacy_hint"] = None
     state.setdefault("transcript", [])
 
 
@@ -37,6 +39,7 @@ def submit_answer(
     answer: str,
     scorecard: ScoreCard,
     next_question: InterviewQuestion | None,
+    fallacy_hint: FallacyHint | None = None,
 ) -> None:
     if not state.get("current_question"):
         raise ValueError("No current question to answer")
@@ -50,10 +53,12 @@ def submit_answer(
             "question": turn.question.model_dump(),
             "answer": turn.answer,
             "scorecard": turn.scorecard.model_dump(),
+            "fallacy_hint": fallacy_hint.model_dump() if fallacy_hint is not None else None,
         }
     )
 
     state["last_scorecard"] = scorecard.model_dump()
+    state["last_fallacy_hint"] = fallacy_hint.model_dump() if fallacy_hint is not None else None
     state["current_question"] = next_question.model_dump() if next_question is not None else None
 
 
@@ -65,4 +70,3 @@ def reset_interview(state: dict[str, Any]) -> None:
     state.clear()
     state.update(new_interview_state())
     state.update(keep)
-
