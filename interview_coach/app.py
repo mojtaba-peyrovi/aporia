@@ -5,7 +5,7 @@ import uuid
 import streamlit as st
 
 from interview_app.agents.cv_profiler import profile_candidate_from_cv_text
-from interview_app.config import Settings
+from interview_app.config import Settings, get_openai_api_key
 from interview_app.logging_setup import get_logger, setup_logging
 from interview_app.services.cv_parser import extract_text_from_upload
 
@@ -26,6 +26,8 @@ def main() -> None:
 
     st.title("Interview Practice Coach")
     st.caption("Step 1: Upload CV → parse → generate Candidate Profile.")
+
+    _ = get_openai_api_key()
 
     st.session_state["temperature"] = st.slider(
         "Creativity (temperature)", min_value=0.0, max_value=1.2, value=float(st.session_state["temperature"])
@@ -79,4 +81,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

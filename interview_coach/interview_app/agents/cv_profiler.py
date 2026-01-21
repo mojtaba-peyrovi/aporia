@@ -50,6 +50,12 @@ def profile_candidate_from_cv_text(cv_text: str, settings: Settings, session_id:
     logger = get_logger(session_id)
     logger.info("profiling_started", extra={"event_name": "profiling_started", **redact_settings(settings)})
 
+    api_key = get_openai_api_key()
+    if not api_key:
+        raise RuntimeError(
+            "OPENAI_API_KEY is not set (set it in `.env` or Streamlit secrets as `OPENAI_API_KEY`)."
+        )
+
     try:
         # Optional: use PydanticAI when available, otherwise fallback.
         from pydantic_ai import Agent  # type: ignore
@@ -73,4 +79,3 @@ def profile_candidate_from_cv_text(cv_text: str, settings: Settings, session_id:
         profile = _profile_with_openai_chat(cv_text=cv_text, settings=settings)
         logger.info("profiling_succeeded", extra={"event_name": "profiling_succeeded", "provider": "openai_chat"})
         return profile
-
