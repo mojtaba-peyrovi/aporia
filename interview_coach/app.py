@@ -4,6 +4,7 @@ import uuid
 
 import streamlit as st
 
+from interview_app.auth import can_show_logout, require_user_identity
 from interview_app.agents.cv_profiler import profile_candidate_from_cv_text
 from interview_app.agents.fallacy_judge import judge_answer_for_fallacies
 from interview_app.agents.interview_coach import evaluate_interview_answer, generate_interview_question
@@ -14,6 +15,7 @@ from interview_app.services.cv_parser import extract_text_from_upload
 from interview_app.services.prompt_catalog import DEFAULT_PROMPT_MODE, list_prompt_modes
 from interview_app.services.safety import OpenAIModerationClient, check_user_text
 from interview_app.session_state import new_interview_state, reset_interview, start_interview, submit_answer
+from interview_app.ui import components, layout
 
 
 def _init_state() -> None:
@@ -28,14 +30,16 @@ def _init_state() -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Interview Practice Coach", layout="wide")
+    st.set_page_config(page_title="Interview Practice Coach", page_icon="🧩", layout="wide")
     _init_state()
 
     setup_logging()
     logger = get_logger(st.session_state["session_id"])
 
-    st.title("Interview Practice Coach")
-    st.caption("Step 1: Upload CV → parse → generate Candidate Profile. Step 2: Run a mock interview loop.")
+    layout.inject_global_css()
+    identity = require_user_identity(logger=logger)
+    layout.render_topbar(user_label=f"{identity.display_name} ({identity.email})", show_logout=can_show_logout())
+    st.caption("Upload your CV to generate a profile, then run a mock interview loop.")
 
     api_key = get_openai_api_key()
     moderation_client = OpenAIModerationClient(api_key=api_key) if api_key else None
@@ -248,13 +252,13 @@ def main() -> None:
     with col_b:
         st.subheader("Candidate Profile")
         if st.session_state.get("profile"):
-            st.json(st.session_state["profile"])
+            components.render_candidate_profile(st.session_state["profile"])
         else:
             st.info("Upload and parse a CV, then generate a profile.")
 
         st.subheader("Feedback")
         if st.session_state.get("last_scorecard"):
-            st.json(st.session_state["last_scorecard"])
+            components.render_scorecard(st.session_state["last_scorecard"])
         else:
             st.caption("Submit an answer to see a scorecard.")
 
@@ -281,21 +285,7 @@ def main() -> None:
             st.caption("Submit an answer to see fallacy coaching hints.")
 
         with st.expander("Transcript", expanded=False):
-            transcript = list(st.session_state.get("transcript") or [])
-            if not transcript:
-                st.caption("No turns yet.")
-            else:
-                for idx, turn in enumerate(transcript, start=1):
-                    st.markdown(f"**Turn {idx}**")
-                    st.write(turn.get("question", {}).get("question_text", ""))
-                    st.write("Answer:")
-                    st.write(turn.get("answer", ""))
-                    st.write("Scorecard:")
-                    st.json(turn.get("scorecard", {}))
-                    if turn.get("fallacy_hint"):
-                        t_hint = FallacyHint.model_validate(turn["fallacy_hint"])
-                        if t_hint.coach_hint_text.strip():
-                            st.caption(f"Coach hint: {t_hint.coach_hint_text}")
+            components.render_transcript(list(st.session_state.get("transcript") or []))
 
         with st.expander("Raw CV text", expanded=False):
             st.text_area(
