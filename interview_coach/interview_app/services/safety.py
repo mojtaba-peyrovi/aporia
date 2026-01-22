@@ -61,19 +61,30 @@ class OpenAIModerationClient:
         from openai import OpenAI  # type: ignore
 
         client = OpenAI(api_key=self._api_key)
-        resp = client.moderations.create(model=self._model, input=text)
-        result = resp.results[0]
-        allowed = not bool(result.flagged)
-        meta: dict[str, Any] = {"provider": "openai", "model": self._model, "flagged": bool(result.flagged)}
-        if hasattr(result, "categories"):
-            meta["categories"] = getattr(result, "categories")
-        if allowed:
+        try:
+            resp = client.moderations.create(model=self._model, input=text)
+            result = resp.results[0]
+            allowed = not bool(result.flagged)
+            meta: dict[str, Any] = {"provider": "openai", "model": self._model, "flagged": bool(result.flagged)}
+            if hasattr(result, "categories"):
+                meta["categories"] = getattr(result, "categories")
+            if allowed:
+                return SafetyDecision(allowed=True, user_message="", meta=meta)
+            return SafetyDecision(
+                allowed=False,
+                user_message="This content may violate safety policies. Please rephrase and try again.",
+                meta=meta,
+            )
+        except Exception as e:
+            # Moderation is best-effort. If unavailable (e.g., API permissions), do not block the user.
+            meta = {
+                "provider": "openai",
+                "model": self._model,
+                "unavailable": True,
+                "error_type": type(e).__name__,
+                "error": str(e)[:300],
+            }
             return SafetyDecision(allowed=True, user_message="", meta=meta)
-        return SafetyDecision(
-            allowed=False,
-            user_message="This content may violate safety policies. Please rephrase and try again.",
-            meta=meta,
-        )
 
 
 def check_user_text(
@@ -111,4 +122,3 @@ def check_user_text(
             return SafetyDecision(allowed=False, user_message=decision.user_message, meta=meta), ""
 
     return SafetyDecision(allowed=True, user_message="", meta=meta), truncated
-

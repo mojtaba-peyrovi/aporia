@@ -63,10 +63,12 @@ def submit_answer(
 
 
 def reset_interview(state: dict[str, Any]) -> None:
-    keep = {
-        "job_description": state.get("job_description", ""),
-        "prompt_mode": state.get("prompt_mode", "default"),
-    }
-    state.clear()
-    state.update(new_interview_state())
-    state.update(keep)
+    keep_job_description = state.get("job_description", "")
+    keep_prompt_mode = state.get("prompt_mode", "default")
+
+    defaults = new_interview_state()
+    for key, value in defaults.items():
+        state[key] = value
+
+    state["job_description"] = keep_job_description
+    state["prompt_mode"] = keep_prompt_mode
