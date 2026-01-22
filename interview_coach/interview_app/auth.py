@@ -5,7 +5,7 @@ from typing import Any
 
 import streamlit as st
 
-from interview_app.db_sqlite import upsert_user
+from interview_app.db import upsert_user_identity
 
 
 @dataclass(frozen=True)
@@ -77,7 +77,7 @@ def require_user_identity(*, logger) -> UserIdentity:
     identity = _identity_from_streamlit_user(getattr(st, "user", None))
 
     if identity and identity.first_name and identity.last_name:
-        user_id = upsert_user(email=identity.email, first_name=identity.first_name, last_name=identity.last_name)
+        user_id = upsert_user_identity(email=identity.email, first_name=identity.first_name, last_name=identity.last_name)
         st.session_state["user_id"] = user_id
         st.session_state["user_identity"] = {
             "email": identity.email,
@@ -89,7 +89,7 @@ def require_user_identity(*, logger) -> UserIdentity:
 
     with st.form("user_identity_form", border=True):
         st.subheader("Complete your profile")
-        st.caption("We only ask once. This is stored locally until MySQL is wired up in V2.")
+        st.caption("We only ask once. This is stored in the app database.")
         email = st.text_input("Email", value=identity.email if identity else "")
         col_a, col_b = st.columns(2)
         with col_a:
@@ -109,7 +109,7 @@ def require_user_identity(*, logger) -> UserIdentity:
         st.stop()
 
     identity = UserIdentity(email=email, first_name=first_name, last_name=last_name)
-    user_id = upsert_user(email=identity.email, first_name=identity.first_name, last_name=identity.last_name)
+    user_id = upsert_user_identity(email=identity.email, first_name=identity.first_name, last_name=identity.last_name)
     st.session_state["user_id"] = user_id
     st.session_state["user_identity"] = {"email": email, "first_name": first_name, "last_name": last_name}
     logger.info("auth_user_ready", extra={"event_name": "AUTH_USER_READY", "user_id": user_id})
@@ -118,4 +118,3 @@ def require_user_identity(*, logger) -> UserIdentity:
 
 def can_show_logout() -> bool:
     return bool(hasattr(st, "logout") and hasattr(st, "login"))
-

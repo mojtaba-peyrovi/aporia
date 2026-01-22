@@ -63,8 +63,16 @@ def submit_answer(
 
 
 def reset_interview(state: dict[str, Any]) -> None:
-    keep_job_description = state.get("job_description", "")
     keep_prompt_mode = state.get("prompt_mode", "default")
+    keep_job_description = state.get("job_description", "")
+    keep_cv_text = state.get("cv_text")
+    keep_cv_file_hash = state.get("cv_file_hash")
+    keep_profile = state.get("profile")
+    keep_jd_text = state.get("jd_text")
+    keep_jd_file_hash = state.get("jd_file_hash")
+    keep_position_title = state.get("position_title")
+    keep_vacancy_id = state.get("vacancy_id")
+    keep_user_vacancy_id = state.get("user_vacancy_id")
 
     defaults = new_interview_state()
     for key, value in defaults.items():
@@ -72,3 +80,11 @@ def reset_interview(state: dict[str, Any]) -> None:
 
     state["job_description"] = keep_job_description
     state["prompt_mode"] = keep_prompt_mode
+    state["cv_text"] = keep_cv_text
+    state["cv_file_hash"] = keep_cv_file_hash
+    state["profile"] = keep_profile
+    state["jd_text"] = keep_jd_text
+    state["jd_file_hash"] = keep_jd_file_hash
+    state["position_title"] = keep_position_title
+    state["vacancy_id"] = keep_vacancy_id
+    state["user_vacancy_id"] = keep_user_vacancy_id
