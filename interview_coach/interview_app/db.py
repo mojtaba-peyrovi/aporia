@@ -99,6 +99,55 @@ def _ensure_schema_sqlite(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS questions (
+            question_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_vacancy_id INTEGER NOT NULL,
+            question_text TEXT NOT NULL,
+            category TEXT NOT NULL,
+            difficulty TEXT NOT NULL,
+            skill_tags_json TEXT,
+            question_order INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(user_vacancy_id, question_order),
+            FOREIGN KEY(user_vacancy_id) REFERENCES user_vacancies(user_vacancy_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS answers (
+            answer_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            question_id INTEGER NOT NULL UNIQUE,
+            answer_text TEXT,
+            is_skipped INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(question_id) REFERENCES questions(question_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS suggestions (
+            suggestion_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            question_id INTEGER NOT NULL UNIQUE,
+            correctness INTEGER NOT NULL,
+            role_relevance INTEGER NOT NULL,
+            red_flags_count INTEGER NOT NULL,
+            red_flags_text TEXT NOT NULL,
+            improvements_text TEXT NOT NULL,
+            suggested_rewrite TEXT,
+            followup_question TEXT,
+            fallacy_detected INTEGER NOT NULL,
+            fallacy_name TEXT,
+            fallacy_explanation TEXT,
+            coach_hint TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(question_id) REFERENCES questions(question_id)
+        )
+        """
+    )
     conn.commit()
 
 
@@ -161,6 +210,57 @@ def _ensure_schema_mysql(conn) -> None:  # pragma: no cover
             UNIQUE KEY uq_user_vacancy (user_id, vacancy_id),
             FOREIGN KEY (user_id) REFERENCES users(user_id),
             FOREIGN KEY (vacancy_id) REFERENCES vacancies(vacancy_id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS questions (
+            question_id INT AUTO_INCREMENT PRIMARY KEY,
+            user_vacancy_id INT NOT NULL,
+            question_text MEDIUMTEXT NOT NULL,
+            category VARCHAR(32) NOT NULL,
+            difficulty VARCHAR(32) NOT NULL,
+            skill_tags_json JSON NULL,
+            question_order INT NOT NULL,
+            created_at DATETIME NOT NULL,
+            UNIQUE KEY uq_questions_uv_order (user_vacancy_id, question_order),
+            FOREIGN KEY (user_vacancy_id) REFERENCES user_vacancies(user_vacancy_id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS answers (
+            answer_id INT AUTO_INCREMENT PRIMARY KEY,
+            question_id INT NOT NULL,
+            answer_text MEDIUMTEXT NULL,
+            is_skipped TINYINT(1) NOT NULL,
+            created_at DATETIME NOT NULL,
+            UNIQUE KEY uq_answers_question (question_id),
+            FOREIGN KEY (question_id) REFERENCES questions(question_id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS suggestions (
+            suggestion_id INT AUTO_INCREMENT PRIMARY KEY,
+            question_id INT NOT NULL,
+            correctness INT NOT NULL,
+            role_relevance INT NOT NULL,
+            red_flags_count INT NOT NULL,
+            red_flags_text MEDIUMTEXT NOT NULL,
+            improvements_text MEDIUMTEXT NOT NULL,
+            suggested_rewrite MEDIUMTEXT NULL,
+            followup_question MEDIUMTEXT NULL,
+            fallacy_detected TINYINT(1) NOT NULL,
+            fallacy_name VARCHAR(64) NULL,
+            fallacy_explanation MEDIUMTEXT NULL,
+            coach_hint MEDIUMTEXT NULL,
+            created_at DATETIME NOT NULL,
+            UNIQUE KEY uq_suggestions_question (question_id),
+            FOREIGN KEY (question_id) REFERENCES questions(question_id)
         )
         """
     )
@@ -395,3 +495,211 @@ def link_user_vacancy(
             raise RuntimeError("Failed to load user_vacancy link")
         return int(row["user_vacancy_id"])
 
+
+def create_question(
+    *,
+    user_vacancy_id: int,
+    question_text: str,
+    category: str,
+    difficulty: str,
+    skill_tags: Iterable[str] = (),
+    question_order: int,
+    sqlite_db_path: Path | None = None,
+) -> int:
+    if not question_text.strip():
+        raise ValueError("question_text must be non-empty")
+
+    skill_tags_json = _json_dumps(list(skill_tags)) if skill_tags else None
+
+    mysql_cfg = _load_mysql_config_from_env()
+    if mysql_cfg:
+        conn = _connect_mysql(mysql_cfg)
+        try:
+            _ensure_schema_mysql(conn)
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO questions (
+                    user_vacancy_id, question_text, category, difficulty, skill_tags_json, question_order, created_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                ON DUPLICATE KEY UPDATE
+                    question_text=VALUES(question_text),
+                    category=VALUES(category),
+                    difficulty=VALUES(difficulty),
+                    skill_tags_json=VALUES(skill_tags_json)
+                """,
+                (user_vacancy_id, question_text, category, difficulty, skill_tags_json, question_order),
+            )
+            cur.execute(
+                "SELECT question_id FROM questions WHERE user_vacancy_id=%s AND question_order=%s",
+                (user_vacancy_id, question_order),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise RuntimeError("Failed to load created question")
+            return int(row[0])
+        finally:
+            conn.close()
+
+    now = _utc_now_iso()
+    with _connect_sqlite(sqlite_db_path) as conn:
+        _ensure_schema_sqlite(conn)
+        conn.execute(
+            """
+            INSERT INTO questions (
+                user_vacancy_id, question_text, category, difficulty, skill_tags_json, question_order, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_vacancy_id, question_order) DO UPDATE SET
+                question_text=excluded.question_text,
+                category=excluded.category,
+                difficulty=excluded.difficulty,
+                skill_tags_json=excluded.skill_tags_json
+            """,
+            (user_vacancy_id, question_text, category, difficulty, skill_tags_json, question_order, now),
+        )
+        row = conn.execute(
+            "SELECT question_id FROM questions WHERE user_vacancy_id=? AND question_order=?",
+            (user_vacancy_id, question_order),
+        ).fetchone()
+        if not row:
+            raise RuntimeError("Failed to load created question")
+        return int(row["question_id"])
+
+
+def insert_answer(
+    *,
+    question_id: int,
+    answer_text: str | None,
+    is_skipped: bool,
+    sqlite_db_path: Path | None = None,
+) -> int:
+    if is_skipped:
+        answer_text = None
+    elif answer_text is None or not str(answer_text).strip():
+        raise ValueError("answer_text must be non-empty when is_skipped=False")
+
+    mysql_cfg = _load_mysql_config_from_env()
+    if mysql_cfg:
+        conn = _connect_mysql(mysql_cfg)
+        try:
+            _ensure_schema_mysql(conn)
+            cur = conn.cursor()
+            cur.execute("SELECT answer_id FROM answers WHERE question_id=%s", (question_id,))
+            row = cur.fetchone()
+            if row:
+                return int(row[0])
+            cur.execute(
+                """
+                INSERT INTO answers (question_id, answer_text, is_skipped, created_at)
+                VALUES (%s, %s, %s, NOW())
+                """,
+                (question_id, answer_text, int(is_skipped)),
+            )
+            return int(cur.lastrowid)
+        finally:
+            conn.close()
+
+    now = _utc_now_iso()
+    with _connect_sqlite(sqlite_db_path) as conn:
+        _ensure_schema_sqlite(conn)
+        row = conn.execute("SELECT answer_id FROM answers WHERE question_id=?", (question_id,)).fetchone()
+        if row:
+            return int(row["answer_id"])
+        cur = conn.execute(
+            """
+            INSERT INTO answers (question_id, answer_text, is_skipped, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (question_id, answer_text, int(is_skipped), now),
+        )
+        return int(cur.lastrowid)
+
+
+def insert_suggestion(
+    *,
+    question_id: int,
+    correctness: int,
+    role_relevance: int,
+    red_flags_count: int,
+    red_flags_text: str,
+    improvements_text: str,
+    suggested_rewrite: str | None,
+    followup_question: str | None,
+    fallacy_detected: bool,
+    fallacy_name: str | None,
+    fallacy_explanation: str | None,
+    coach_hint: str | None,
+    sqlite_db_path: Path | None = None,
+) -> int:
+    mysql_cfg = _load_mysql_config_from_env()
+    if mysql_cfg:
+        conn = _connect_mysql(mysql_cfg)
+        try:
+            _ensure_schema_mysql(conn)
+            cur = conn.cursor()
+            cur.execute("SELECT suggestion_id FROM suggestions WHERE question_id=%s", (question_id,))
+            row = cur.fetchone()
+            if row:
+                return int(row[0])
+            cur.execute(
+                """
+                INSERT INTO suggestions (
+                    question_id, correctness, role_relevance, red_flags_count, red_flags_text, improvements_text,
+                    suggested_rewrite, followup_question, fallacy_detected, fallacy_name, fallacy_explanation, coach_hint,
+                    created_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                """,
+                (
+                    question_id,
+                    correctness,
+                    role_relevance,
+                    red_flags_count,
+                    red_flags_text,
+                    improvements_text,
+                    suggested_rewrite,
+                    followup_question,
+                    int(fallacy_detected),
+                    fallacy_name,
+                    fallacy_explanation,
+                    coach_hint,
+                ),
+            )
+            return int(cur.lastrowid)
+        finally:
+            conn.close()
+
+    now = _utc_now_iso()
+    with _connect_sqlite(sqlite_db_path) as conn:
+        _ensure_schema_sqlite(conn)
+        row = conn.execute("SELECT suggestion_id FROM suggestions WHERE question_id=?", (question_id,)).fetchone()
+        if row:
+            return int(row["suggestion_id"])
+        cur = conn.execute(
+            """
+            INSERT INTO suggestions (
+                question_id, correctness, role_relevance, red_flags_count, red_flags_text, improvements_text,
+                suggested_rewrite, followup_question, fallacy_detected, fallacy_name, fallacy_explanation, coach_hint,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                question_id,
+                correctness,
+                role_relevance,
+                red_flags_count,
+                red_flags_text,
+                improvements_text,
+                suggested_rewrite,
+                followup_question,
+                int(fallacy_detected),
+                fallacy_name,
+                fallacy_explanation,
+                coach_hint,
+                now,
+            ),
+        )
+        return int(cur.lastrowid)

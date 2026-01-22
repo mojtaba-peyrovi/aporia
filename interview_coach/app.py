@@ -9,14 +9,22 @@ from interview_app.agents.cv_profiler import profile_candidate_from_cv_text
 from interview_app.agents.fallacy_judge import judge_answer_for_fallacies
 from interview_app.agents.interview_coach import evaluate_interview_answer, generate_interview_question
 from interview_app.config import Settings, get_openai_api_key
-from interview_app.db import link_user_vacancy, update_user_cv, update_user_profile, upsert_vacancy
+from interview_app.db import (
+    create_question,
+    insert_answer,
+    insert_suggestion,
+    link_user_vacancy,
+    update_user_cv,
+    update_user_profile,
+    upsert_vacancy,
+)
 from interview_app.logging_setup import get_logger, setup_logging
 from interview_app.models.schemas import CandidateProfile, FallacyHint, InterviewQuestion, ScoreCard, UNCERTAINTY_DISCLAIMER
 from interview_app.services.cv_parser import extract_text_from_upload
 from interview_app.services.prompt_catalog import DEFAULT_PROMPT_MODE, list_prompt_modes
 from interview_app.services.safety import OpenAIModerationClient, check_user_text
 from interview_app.services.uploads import upload_hash
-from interview_app.session_state import new_interview_state, reset_interview, start_interview, submit_answer
+from interview_app.session_state import new_interview_state, reset_interview, skip_question, start_interview, submit_answer
 from interview_app.ui import components, layout
 
 
@@ -202,6 +210,7 @@ def main() -> None:
         col_start, col_reset = st.columns([1, 1])
         with col_start:
             start_disabled = bool(st.session_state.get("current_question"))
+            start_disabled = start_disabled or bool(st.session_state.get("interview_started"))
             start_disabled = start_disabled or not (st.session_state.get("jd_text") or "").strip()
             start_disabled = start_disabled or not (st.session_state.get("position_title") or "").strip()
             if st.button("Start interview", disabled=start_disabled):
@@ -220,7 +229,28 @@ def main() -> None:
                         prompt_mode=str(st.session_state.get("prompt_mode") or DEFAULT_PROMPT_MODE),
                         session_id=st.session_state["session_id"],
                     )
-                    start_interview(st.session_state, question)
+                    question_id: int | None = None
+                    question_order = len(list(st.session_state.get("transcript") or [])) + 1
+                    user_vacancy_id = int(st.session_state.get("user_vacancy_id") or 0)
+                    if user_vacancy_id:
+                        question_id = create_question(
+                            user_vacancy_id=user_vacancy_id,
+                            question_text=question.question_text,
+                            category=question.category,
+                            difficulty=question.difficulty,
+                            skill_tags=question.tags,
+                            question_order=question_order,
+                        )
+                        logger.info(
+                            "question_persisted",
+                            extra={
+                                "event_name": "QUESTION_PERSISTED",
+                                "question_id": question_id,
+                                "user_vacancy_id": user_vacancy_id,
+                                "question_order": question_order,
+                            },
+                        )
+                    start_interview(st.session_state, question, question_id=question_id, question_order=question_order)
                     st.session_state["answer_draft"] = ""
                     st.success("Interview started.")
                     logger.info("interview_started", extra={"event_name": "interview_started"})
@@ -245,7 +275,16 @@ def main() -> None:
                 value=st.session_state.get("answer_draft") or "",
                 height=180,
             )
-            if st.button("Submit answer", disabled=not (st.session_state.get("answer_draft") or "").strip()):
+            col_submit, col_next = st.columns([1, 1])
+            with col_submit:
+                submit_clicked = st.button(
+                    "Submit answer",
+                    disabled=not (st.session_state.get("answer_draft") or "").strip(),
+                )
+            with col_next:
+                next_clicked = st.button("Next question")
+
+            if submit_clicked:
                 try:
                     settings = Settings(temperature=float(st.session_state["temperature"]))
                     transcript = list(st.session_state.get("transcript") or [])
@@ -313,6 +352,7 @@ def main() -> None:
                         "answer": safe_answer,
                         "scorecard": scorecard.model_dump(),
                         "fallacy_hint": fallacy_hint.model_dump(),
+                        "is_skipped": False,
                     }
                     next_question = generate_interview_question(
                         profile=st.session_state.get("profile"),
@@ -323,6 +363,56 @@ def main() -> None:
                         session_id=st.session_state["session_id"],
                     )
 
+                    current_question_id: int | None = st.session_state.get("current_question_id")
+                    current_question_order = int(st.session_state.get("current_question_order") or (len(transcript) + 1))
+                    user_vacancy_id = int(st.session_state.get("user_vacancy_id") or 0)
+                    if user_vacancy_id and current_question_id is None:
+                        current_question_id = create_question(
+                            user_vacancy_id=user_vacancy_id,
+                            question_text=q.question_text,
+                            category=q.category,
+                            difficulty=q.difficulty,
+                            skill_tags=q.tags,
+                            question_order=current_question_order,
+                        )
+                        st.session_state["current_question_id"] = current_question_id
+                        st.session_state["current_question_order"] = current_question_order
+
+                    if current_question_id is not None:
+                        insert_answer(question_id=current_question_id, answer_text=safe_answer, is_skipped=False)
+
+                        def to_pct(value: int) -> int:
+                            return int(round((value / 5) * 100))
+
+                        fallacy_detected = bool(fallacy_hint.possible_fallacies)
+                        fallacy_name = fallacy_hint.possible_fallacies[0].type if fallacy_hint.possible_fallacies else None
+                        insert_suggestion(
+                            question_id=current_question_id,
+                            correctness=to_pct(scorecard.correctness),
+                            role_relevance=to_pct(scorecard.role_relevance),
+                            red_flags_count=len(scorecard.red_flags),
+                            red_flags_text="\n".join(scorecard.red_flags),
+                            improvements_text="\n".join(scorecard.improvements),
+                            suggested_rewrite=scorecard.suggested_rewrite if scorecard.suggested_rewrite else None,
+                            followup_question=scorecard.followup_question.strip() or None,
+                            fallacy_detected=fallacy_detected,
+                            fallacy_name=fallacy_name,
+                            fallacy_explanation=fallacy_hint.more_info_text if fallacy_detected else None,
+                            coach_hint=fallacy_hint.coach_hint_text.strip() or None,
+                        )
+
+                    next_question_id: int | None = None
+                    next_question_order = current_question_order + 1
+                    if user_vacancy_id:
+                        next_question_id = create_question(
+                            user_vacancy_id=user_vacancy_id,
+                            question_text=next_question.question_text,
+                            category=next_question.category,
+                            difficulty=next_question.difficulty,
+                            skill_tags=next_question.tags,
+                            question_order=next_question_order,
+                        )
+
                     submit_answer(
                         st.session_state,
                         answer=safe_answer,
@@ -330,6 +420,8 @@ def main() -> None:
                         next_question=next_question,
                         fallacy_hint=fallacy_hint,
                     )
+                    st.session_state["current_question_id"] = next_question_id
+                    st.session_state["current_question_order"] = next_question_order
                     st.session_state["answer_draft"] = ""
                     st.success("Answer submitted.")
                     logger.info("answer_submitted", extra={"event_name": "answer_submitted"})
@@ -338,6 +430,133 @@ def main() -> None:
                 except Exception:
                     logger.exception("answer_submit_failed", extra={"event_name": "answer_submit_failed"})
                     st.error("Failed to submit answer. Check your API key and logs.")
+
+            if next_clicked:
+                if (st.session_state.get("answer_draft") or "").strip():
+                    st.warning("Submit your draft answer, or clear it to skip this question.")
+                else:
+                    try:
+                        settings = Settings(temperature=float(st.session_state["temperature"]))
+                        transcript = list(st.session_state.get("transcript") or [])
+
+                        jd_text = str(st.session_state.get("jd_text") or "")
+                        jd_decision, safe_jd_text = check_user_text(
+                            text=jd_text,
+                            label="a job description",
+                            moderation_client=moderation_client,
+                        )
+                        if not jd_decision.allowed:
+                            st.error(jd_decision.user_message)
+                            logger.info(
+                                "job_description_blocked",
+                                extra={"event_name": "job_description_blocked", **jd_decision.meta},
+                            )
+                            raise RuntimeError("Job description blocked by safety checks")
+
+                        current_question_id: int | None = st.session_state.get("current_question_id")
+                        current_question_order = int(st.session_state.get("current_question_order") or (len(transcript) + 1))
+                        user_vacancy_id = int(st.session_state.get("user_vacancy_id") or 0)
+                        if user_vacancy_id and current_question_id is None:
+                            current_question_id = create_question(
+                                user_vacancy_id=user_vacancy_id,
+                                question_text=q.question_text,
+                                category=q.category,
+                                difficulty=q.difficulty,
+                                skill_tags=q.tags,
+                                question_order=current_question_order,
+                            )
+                            st.session_state["current_question_id"] = current_question_id
+                            st.session_state["current_question_order"] = current_question_order
+
+                        if current_question_id is not None:
+                            insert_answer(question_id=current_question_id, answer_text=None, is_skipped=True)
+
+                        turn_dict = {"question": q.model_dump(), "answer": "", "is_skipped": True}
+                        next_question = generate_interview_question(
+                            profile=st.session_state.get("profile"),
+                            job_description=safe_jd_text,
+                            transcript=transcript + [turn_dict],
+                            settings=settings,
+                            prompt_mode=str(st.session_state.get("prompt_mode") or DEFAULT_PROMPT_MODE),
+                            session_id=st.session_state["session_id"],
+                        )
+
+                        next_question_id: int | None = None
+                        next_question_order = current_question_order + 1
+                        if user_vacancy_id:
+                            next_question_id = create_question(
+                                user_vacancy_id=user_vacancy_id,
+                                question_text=next_question.question_text,
+                                category=next_question.category,
+                                difficulty=next_question.difficulty,
+                                skill_tags=next_question.tags,
+                                question_order=next_question_order,
+                            )
+
+                        skip_question(st.session_state, next_question=next_question)
+                        st.session_state["current_question_id"] = next_question_id
+                        st.session_state["current_question_order"] = next_question_order
+                        st.session_state["answer_draft"] = ""
+                        st.info("Skipped. Next question ready.")
+                        logger.info("question_skipped", extra={"event_name": "question_skipped"})
+                    except RuntimeError:
+                        pass
+                    except Exception:
+                        logger.exception("next_question_failed", extra={"event_name": "next_question_failed"})
+                        st.error("Failed to get the next question. Check your API key and logs.")
+        elif st.session_state.get("interview_started"):
+            if st.button("Next question"):
+                try:
+                    settings = Settings(temperature=float(st.session_state["temperature"]))
+                    transcript = list(st.session_state.get("transcript") or [])
+
+                    jd_text = str(st.session_state.get("jd_text") or "")
+                    jd_decision, safe_jd_text = check_user_text(
+                        text=jd_text,
+                        label="a job description",
+                        moderation_client=moderation_client,
+                    )
+                    if not jd_decision.allowed:
+                        st.error(jd_decision.user_message)
+                        logger.info(
+                            "job_description_blocked",
+                            extra={"event_name": "job_description_blocked", **jd_decision.meta},
+                        )
+                        raise RuntimeError("Job description blocked by safety checks")
+
+                    next_question = generate_interview_question(
+                        profile=st.session_state.get("profile"),
+                        job_description=safe_jd_text,
+                        transcript=transcript,
+                        settings=settings,
+                        prompt_mode=str(st.session_state.get("prompt_mode") or DEFAULT_PROMPT_MODE),
+                        session_id=st.session_state["session_id"],
+                    )
+
+                    user_vacancy_id = int(st.session_state.get("user_vacancy_id") or 0)
+                    next_question_order = len(transcript) + 1
+                    next_question_id: int | None = None
+                    if user_vacancy_id:
+                        next_question_id = create_question(
+                            user_vacancy_id=user_vacancy_id,
+                            question_text=next_question.question_text,
+                            category=next_question.category,
+                            difficulty=next_question.difficulty,
+                            skill_tags=next_question.tags,
+                            question_order=next_question_order,
+                        )
+
+                    st.session_state["current_question"] = next_question.model_dump()
+                    st.session_state["current_question_id"] = next_question_id
+                    st.session_state["current_question_order"] = next_question_order
+                    st.session_state["answer_draft"] = ""
+                    st.success("Next question ready.")
+                    logger.info("next_question_generated", extra={"event_name": "next_question_generated"})
+                except RuntimeError:
+                    pass
+                except Exception:
+                    logger.exception("next_question_failed", extra={"event_name": "next_question_failed"})
+                    st.error("Failed to get the next question. Check your API key and logs.")
 
     with col_b:
         st.subheader("Candidate Profile")

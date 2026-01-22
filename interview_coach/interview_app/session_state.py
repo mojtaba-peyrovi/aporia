@@ -19,15 +19,25 @@ def new_interview_state() -> dict[str, Any]:
         "prompt_mode": "default",
         "interview_started": False,
         "current_question": None,
+        "current_question_id": None,
+        "current_question_order": None,
         "last_scorecard": None,
         "last_fallacy_hint": None,
         "transcript": [],
     }
 
 
-def start_interview(state: dict[str, Any], first_question: InterviewQuestion) -> None:
+def start_interview(
+    state: dict[str, Any],
+    first_question: InterviewQuestion,
+    *,
+    question_id: int | None = None,
+    question_order: int | None = None,
+) -> None:
     state["interview_started"] = True
     state["current_question"] = first_question.model_dump()
+    state["current_question_id"] = question_id
+    state["current_question_order"] = question_order
     state["last_scorecard"] = None
     state["last_fallacy_hint"] = None
     state.setdefault("transcript", [])
@@ -50,16 +60,50 @@ def submit_answer(
     transcript: list[dict[str, Any]] = state.setdefault("transcript", [])
     transcript.append(
         {
+            "question_id": state.get("current_question_id"),
+            "question_order": state.get("current_question_order"),
             "question": turn.question.model_dump(),
             "answer": turn.answer,
             "scorecard": turn.scorecard.model_dump(),
             "fallacy_hint": fallacy_hint.model_dump() if fallacy_hint is not None else None,
+            "is_skipped": False,
         }
     )
 
     state["last_scorecard"] = scorecard.model_dump()
     state["last_fallacy_hint"] = fallacy_hint.model_dump() if fallacy_hint is not None else None
     state["current_question"] = next_question.model_dump() if next_question is not None else None
+    state["current_question_id"] = None
+    state["current_question_order"] = None
+
+
+def skip_question(
+    state: dict[str, Any],
+    *,
+    next_question: InterviewQuestion | None,
+) -> None:
+    if not state.get("current_question"):
+        raise ValueError("No current question to skip")
+
+    question = InterviewQuestion.model_validate(state["current_question"])
+    transcript: list[dict[str, Any]] = state.setdefault("transcript", [])
+    transcript.append(
+        {
+            "question_id": state.get("current_question_id"),
+            "question_order": state.get("current_question_order"),
+            "question": question.model_dump(),
+            "answer": "",
+            "scorecard": None,
+            "fallacy_hint": None,
+            "is_skipped": True,
+        }
+    )
+
+    state["last_scorecard"] = None
+    state["last_fallacy_hint"] = None
+    state["current_question"] = next_question.model_dump() if next_question is not None else None
+    state["current_question_id"] = None
+    state["current_question_order"] = None
 
 
 def reset_interview(state: dict[str, Any]) -> None:
