@@ -66,6 +66,7 @@ def render_scorecard(scorecard_dict: dict) -> None:
 
 def render_transcript(transcript: list[dict]) -> None:
     from interview_app.models.schemas import FallacyHint, ScoreCard
+    from interview_app.services.fallacy_formatting import format_fallacy_name, get_primary_fallacy_type
 
     if not transcript:
         st.caption("No turns yet.")
@@ -85,5 +86,11 @@ def render_transcript(transcript: list[dict]) -> None:
         hint_dict = turn.get("fallacy_hint")
         if hint_dict:
             hint = FallacyHint.model_validate(hint_dict)
+            fallacy_type = get_primary_fallacy_type(hint)
+            if fallacy_type:
+                st.markdown(
+                    f'<div class="aporia-fallacy-ribbon">Fallacy Detected - {format_fallacy_name(fallacy_type)}</div>',
+                    unsafe_allow_html=True,
+                )
             if hint.coach_hint_text.strip():
                 st.caption(f"Coach hint: {hint.coach_hint_text}")

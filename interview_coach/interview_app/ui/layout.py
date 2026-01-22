@@ -32,6 +32,17 @@ def inject_global_css() -> None:
     font-size: 0.9rem;
     white-space: nowrap;
   }
+
+  /* Fallacy ribbon/banner */
+  .aporia-fallacy-ribbon {
+    background: #fb923c; /* orange */
+    color: #111827;
+    border-left: 6px solid #ea580c;
+    padding: 0.6rem 0.75rem;
+    border-radius: 0.5rem;
+    font-weight: 700;
+    margin: 0.5rem 0 0.75rem 0;
+  }
 </style>
 """,
         unsafe_allow_html=True,

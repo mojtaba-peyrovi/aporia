@@ -21,6 +21,7 @@ from interview_app.db import (
 from interview_app.logging_setup import get_logger, setup_logging
 from interview_app.models.schemas import CandidateProfile, FallacyHint, InterviewQuestion, ScoreCard, UNCERTAINTY_DISCLAIMER
 from interview_app.services.cv_parser import extract_text_from_upload
+from interview_app.services.fallacy_formatting import build_read_more_text, format_fallacy_name, get_primary_fallacy_type
 from interview_app.services.prompt_catalog import DEFAULT_PROMPT_MODE, list_prompt_modes
 from interview_app.services.safety import OpenAIModerationClient, check_user_text
 from interview_app.services.uploads import upload_hash
@@ -385,7 +386,8 @@ def main() -> None:
                             return int(round((value / 5) * 100))
 
                         fallacy_detected = bool(fallacy_hint.possible_fallacies)
-                        fallacy_name = fallacy_hint.possible_fallacies[0].type if fallacy_hint.possible_fallacies else None
+                        fallacy_name = get_primary_fallacy_type(fallacy_hint)
+                        fallacy_read_more = build_read_more_text(fallacy_hint) if fallacy_detected else None
                         insert_suggestion(
                             question_id=current_question_id,
                             correctness=to_pct(scorecard.correctness),
@@ -397,7 +399,7 @@ def main() -> None:
                             followup_question=scorecard.followup_question.strip() or None,
                             fallacy_detected=fallacy_detected,
                             fallacy_name=fallacy_name,
-                            fallacy_explanation=fallacy_hint.more_info_text if fallacy_detected else None,
+                            fallacy_explanation=fallacy_read_more,
                             coach_hint=fallacy_hint.coach_hint_text.strip() or None,
                         )
 
@@ -574,19 +576,28 @@ def main() -> None:
         hint_dict = st.session_state.get("last_fallacy_hint")
         if hint_dict:
             hint = FallacyHint.model_validate(hint_dict)
+            fallacy_type = get_primary_fallacy_type(hint)
+            if fallacy_type:
+                st.markdown(
+                    f'<div class="aporia-fallacy-ribbon">Fallacy Detected - {format_fallacy_name(fallacy_type)}</div>',
+                    unsafe_allow_html=True,
+                )
+
             if hint.hint_level != "none" and hint.coach_hint_text.strip():
                 st.warning(hint.coach_hint_text)
+            elif fallacy_type:
+                st.caption("Fallacy detected; see details below.")
             else:
-                st.caption("No coach hint detected for the last answer.")
+                st.caption("No fallacy coaching hint detected for the last answer.")
 
-            with st.expander("More info", expanded=False):
-                st.write(hint.more_info_text)
+            with st.expander("Read more", expanded=False):
+                st.write(build_read_more_text(hint))
                 if hint.possible_fallacies:
                     st.markdown("**Possible fallacies**")
                     for pf in hint.possible_fallacies:
                         st.write(f"- {pf.type} (confidence {pf.confidence:.2f}): {pf.short_explanation}")
                         if pf.excerpt:
-                            st.caption(f'Excerpt: \"{pf.excerpt}\"')
+                            st.caption(f'Excerpt: "{pf.excerpt}"')
                 if hint.suggested_rewrite:
                     st.markdown("**Suggested rewrite**")
                     st.write(hint.suggested_rewrite)
