@@ -54,9 +54,13 @@ def inject_global_css() -> None:
 def render_topbar(*, user_label: str, show_logout: bool) -> None:
     left, right = st.columns([3, 2], vertical_alignment="center")
     with left:
-        repo_root = Path(__file__).resolve().parents[3]
-        logo_path = repo_root / "aporia_logo.png"
-        if logo_path.exists():
+        candidate_paths = [
+            Path.cwd() / "aporia_logo.png",
+            Path(__file__).resolve().parents[3] / "aporia_logo.png",
+        ]
+        logo_path = next((path for path in candidate_paths if path.exists()), None)
+
+        if logo_path:
             logo_col, title_col = st.columns([1, 8], vertical_alignment="center")
             with logo_col:
                 st.image(str(logo_path), width=36)
