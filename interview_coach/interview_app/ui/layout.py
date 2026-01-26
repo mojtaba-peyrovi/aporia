@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 
 
@@ -52,7 +54,16 @@ def inject_global_css() -> None:
 def render_topbar(*, user_label: str, show_logout: bool) -> None:
     left, right = st.columns([3, 2], vertical_alignment="center")
     with left:
-        st.markdown('<div class="aporia-logo">[Logo] Interview Practice Coach</div>', unsafe_allow_html=True)
+        repo_root = Path(__file__).resolve().parents[3]
+        logo_path = repo_root / "aporia_logo.png"
+        if logo_path.exists():
+            logo_col, title_col = st.columns([1, 8], vertical_alignment="center")
+            with logo_col:
+                st.image(str(logo_path), width=36)
+            with title_col:
+                st.markdown('<div class="aporia-logo">Interview Practice Coach</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="aporia-logo">Interview Practice Coach</div>', unsafe_allow_html=True)
     with right:
         cols = st.columns([5, 2], vertical_alignment="center")
         cols[0].markdown(f'<div class="aporia-user">Welcome, {user_label}</div>', unsafe_allow_html=True)
