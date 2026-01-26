@@ -1,0 +1,36 @@
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: aporia
+      MYSQL_USER: aporia
+      MYSQL_PASSWORD: aporia
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  app:
+    build: .
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: aporia
+      MYSQL_USER: aporia
+      MYSQL_PASSWORD: aporia
+      OPENAI_API_KEY: ${OPENAI_API_KEY-}
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
