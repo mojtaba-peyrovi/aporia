@@ -739,3 +739,188 @@ def insert_suggestion(
             ),
         )
         return int(cur.lastrowid)
+
+
+def fetch_user_vacancy_analytics(
+    *,
+    user_vacancy_id: int,
+    sqlite_db_path: Path | None = None,
+) -> dict[str, Any]:
+    mysql_cfg = _load_mysql_config_from_env()
+    if mysql_cfg:
+        conn = _connect_mysql(mysql_cfg)
+        try:
+            _ensure_schema_mysql(conn)
+            cur = conn.cursor(dictionary=True)
+            cur.execute(
+                """
+                SELECT
+                    q.question_order AS question_order,
+                    q.question_id AS question_id,
+                    COALESCE(a.is_skipped, 0) AS is_skipped,
+                    s.correctness AS correctness,
+                    s.role_relevance AS role_relevance,
+                    s.red_flags_count AS red_flags_count,
+                    s.fallacy_detected AS fallacy_detected,
+                    s.created_at AS created_at
+                FROM questions q
+                LEFT JOIN answers a ON a.question_id = q.question_id
+                LEFT JOIN suggestions s ON s.question_id = q.question_id
+                WHERE q.user_vacancy_id = %s
+                ORDER BY q.question_order ASC
+                """,
+                (user_vacancy_id,),
+            )
+            rows = list(cur.fetchall() or [])
+        finally:
+            conn.close()
+    else:
+        with _connect_sqlite(sqlite_db_path) as conn:
+            _ensure_schema_sqlite(conn)
+            rows = [
+                dict(row)
+                for row in conn.execute(
+                    """
+                    SELECT
+                        q.question_order AS question_order,
+                        q.question_id AS question_id,
+                        COALESCE(a.is_skipped, 0) AS is_skipped,
+                        s.correctness AS correctness,
+                        s.role_relevance AS role_relevance,
+                        s.red_flags_count AS red_flags_count,
+                        s.fallacy_detected AS fallacy_detected,
+                        s.created_at AS created_at
+                    FROM questions q
+                    LEFT JOIN answers a ON a.question_id = q.question_id
+                    LEFT JOIN suggestions s ON s.question_id = q.question_id
+                    WHERE q.user_vacancy_id = ?
+                    ORDER BY q.question_order ASC
+                    """,
+                    (user_vacancy_id,),
+                ).fetchall()
+            ]
+
+    total_questions = len(rows)
+    skipped_questions = sum(1 for row in rows if int(row.get("is_skipped") or 0) == 1)
+    answered_rows = [row for row in rows if row.get("correctness") is not None]
+    answered_questions = len(answered_rows)
+
+    def _avg_int(key: str) -> float | None:
+        values = [int(row[key]) for row in answered_rows if row.get(key) is not None]
+        if not values:
+            return None
+        return sum(values) / len(values)
+
+    avg_correctness = _avg_int("correctness")
+    avg_role_relevance = _avg_int("role_relevance")
+    avg_red_flags = _avg_int("red_flags_count")
+    fallacy_detected_count = sum(1 for row in answered_rows if int(row.get("fallacy_detected") or 0) == 1)
+
+    timeline: list[dict[str, Any]] = []
+    for row in rows:
+        timeline.append(
+            {
+                "question_order": int(row["question_order"]),
+                "is_skipped": bool(int(row.get("is_skipped") or 0)),
+                "correctness": int(row["correctness"]) if row.get("correctness") is not None else None,
+                "role_relevance": int(row["role_relevance"]) if row.get("role_relevance") is not None else None,
+                "red_flags_count": int(row["red_flags_count"]) if row.get("red_flags_count") is not None else None,
+                "fallacy_detected": bool(int(row.get("fallacy_detected") or 0)) if row.get("fallacy_detected") is not None else False,
+                "created_at": row.get("created_at"),
+            }
+        )
+
+    return {
+        "summary": {
+            "total_questions": total_questions,
+            "answered_questions": answered_questions,
+            "skipped_questions": skipped_questions,
+            "avg_correctness": avg_correctness,
+            "avg_role_relevance": avg_role_relevance,
+            "avg_red_flags": avg_red_flags,
+            "fallacy_detected_count": fallacy_detected_count,
+        },
+        "timeline": timeline,
+    }
+
+
+def fetch_population_correctness_distribution(
+    *,
+    user_id: int,
+    sqlite_db_path: Path | None = None,
+) -> dict[str, Any]:
+    mysql_cfg = _load_mysql_config_from_env()
+    if mysql_cfg:
+        conn = _connect_mysql(mysql_cfg)
+        try:
+            _ensure_schema_mysql(conn)
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT AVG(s.correctness) AS avg_correctness, AVG(s.role_relevance) AS avg_role_relevance
+                FROM suggestions s
+                JOIN questions q ON q.question_id = s.question_id
+                JOIN user_vacancies uv ON uv.user_vacancy_id = q.user_vacancy_id
+                WHERE uv.user_id = %s
+                """,
+                (user_id,),
+            )
+            user_row = cur.fetchone()
+            user_avg_correctness = float(user_row[0]) if user_row and user_row[0] is not None else None
+            user_avg_role_relevance = float(user_row[1]) if user_row and user_row[1] is not None else None
+
+            cur.execute(
+                """
+                SELECT uv.user_id, AVG(s.correctness) AS avg_correctness
+                FROM suggestions s
+                JOIN questions q ON q.question_id = s.question_id
+                JOIN user_vacancies uv ON uv.user_vacancy_id = q.user_vacancy_id
+                GROUP BY uv.user_id
+                HAVING COUNT(*) > 0
+                """,
+            )
+            population = [(int(row[0]), float(row[1])) for row in cur.fetchall() if row[1] is not None]
+        finally:
+            conn.close()
+    else:
+        with _connect_sqlite(sqlite_db_path) as conn:
+            _ensure_schema_sqlite(conn)
+            user_row = conn.execute(
+                """
+                SELECT AVG(s.correctness) AS avg_correctness, AVG(s.role_relevance) AS avg_role_relevance
+                FROM suggestions s
+                JOIN questions q ON q.question_id = s.question_id
+                JOIN user_vacancies uv ON uv.user_vacancy_id = q.user_vacancy_id
+                WHERE uv.user_id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+            user_avg_correctness = float(user_row["avg_correctness"]) if user_row and user_row["avg_correctness"] is not None else None
+            user_avg_role_relevance = (
+                float(user_row["avg_role_relevance"]) if user_row and user_row["avg_role_relevance"] is not None else None
+            )
+
+            rows = conn.execute(
+                """
+                SELECT uv.user_id AS user_id, AVG(s.correctness) AS avg_correctness
+                FROM suggestions s
+                JOIN questions q ON q.question_id = s.question_id
+                JOIN user_vacancies uv ON uv.user_vacancy_id = q.user_vacancy_id
+                GROUP BY uv.user_id
+                HAVING COUNT(*) > 0
+                """,
+            ).fetchall()
+            population = [(int(row["user_id"]), float(row["avg_correctness"])) for row in rows if row["avg_correctness"] is not None]
+
+    values = sorted(avg for _, avg in population)
+    percentile: int | None = None
+    if user_avg_correctness is not None and values:
+        below_or_equal = sum(1 for value in values if value <= user_avg_correctness)
+        percentile = int(round((below_or_equal / len(values)) * 100))
+
+    return {
+        "user_avg_correctness": user_avg_correctness,
+        "user_avg_role_relevance": user_avg_role_relevance,
+        "population_avg_correctness": values,
+        "percentile": percentile,
+    }

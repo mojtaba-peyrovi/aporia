@@ -11,6 +11,8 @@ from interview_app.agents.interview_coach import evaluate_interview_answer, gene
 from interview_app.config import Settings, get_openai_api_key
 from interview_app.db import (
     create_question,
+    fetch_population_correctness_distribution,
+    fetch_user_vacancy_analytics,
     get_user_top_skills,
     insert_answer,
     insert_suggestion,
@@ -28,6 +30,7 @@ from interview_app.services.safety import OpenAIModerationClient, check_user_tex
 from interview_app.services.skill_coverage import compute_skill_coverage, pick_next_focus_skill
 from interview_app.services.uploads import upload_hash
 from interview_app.session_state import new_interview_state, reset_interview, skip_question, start_interview, submit_answer
+from interview_app.charts import render_avg_bars, render_correctness_over_time, render_population_distribution
 from interview_app.ui import components, layout
 
 
@@ -641,6 +644,46 @@ def main() -> None:
 
         with st.expander("Transcript", expanded=False):
             components.render_transcript(list(st.session_state.get("transcript") or []))
+
+        st.subheader("Analytics")
+        show_analytics = st.checkbox("Show analytics dashboard", value=bool(st.session_state.get("show_analytics") or False))
+        st.session_state["show_analytics"] = show_analytics
+        if show_analytics:
+            user_id = int(st.session_state.get("user_id") or 0)
+            user_vacancy_id = int(st.session_state.get("user_vacancy_id") or 0)
+            if not user_id or not user_vacancy_id:
+                st.info("Start an interview (and answer at least one question) to see analytics.")
+            else:
+                analytics = fetch_user_vacancy_analytics(user_vacancy_id=user_vacancy_id)
+                summary = dict(analytics.get("summary") or {})
+                timeline = list(analytics.get("timeline") or [])
+
+                cols = st.columns(4)
+                cols[0].metric("Answered", int(summary.get("answered_questions") or 0))
+                cols[1].metric("Skipped", int(summary.get("skipped_questions") or 0))
+                cols[2].metric("Avg correctness", f'{(summary.get("avg_correctness") or 0):.0f}%' if summary.get("avg_correctness") is not None else "—")
+                cols[3].metric(
+                    "Avg relevance",
+                    f'{(summary.get("avg_role_relevance") or 0):.0f}%' if summary.get("avg_role_relevance") is not None else "—",
+                )
+                cols = st.columns(3)
+                cols[0].metric("Questions total", int(summary.get("total_questions") or 0))
+                cols[1].metric("Avg red flags", f'{(summary.get("avg_red_flags") or 0):.1f}' if summary.get("avg_red_flags") is not None else "—")
+                cols[2].metric("Fallacy flagged", int(summary.get("fallacy_detected_count") or 0))
+
+                render_correctness_over_time(timeline=timeline)
+                render_avg_bars(
+                    avg_correctness=summary.get("avg_correctness"),
+                    avg_role_relevance=summary.get("avg_role_relevance"),
+                )
+                population = fetch_population_correctness_distribution(user_id=user_id)
+                if population.get("percentile") is not None:
+                    st.caption(f"Percentile vs other users (by average correctness): {int(population['percentile'])}%")
+                render_population_distribution(
+                    population_values=list(population.get("population_avg_correctness") or []),
+                    user_value=population.get("user_avg_correctness"),
+                )
+                logger.info("analytics_rendered", extra={"event_name": "ANALYTICS_RENDERED"})
 
         with st.expander("Raw CV text", expanded=False):
             st.text_area(
