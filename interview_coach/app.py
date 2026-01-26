@@ -11,6 +11,7 @@ from interview_app.agents.interview_coach import evaluate_interview_answer, gene
 from interview_app.config import Settings, get_openai_api_key
 from interview_app.db import (
     create_question,
+    get_user_top_skills,
     insert_answer,
     insert_suggestion,
     link_user_vacancy,
@@ -24,6 +25,7 @@ from interview_app.services.cv_parser import extract_text_from_upload
 from interview_app.services.fallacy_formatting import build_read_more_text, format_fallacy_name, get_primary_fallacy_type
 from interview_app.services.prompt_catalog import DEFAULT_PROMPT_MODE, list_prompt_modes
 from interview_app.services.safety import OpenAIModerationClient, check_user_text
+from interview_app.services.skill_coverage import compute_skill_coverage, pick_next_focus_skill
 from interview_app.services.uploads import upload_hash
 from interview_app.session_state import new_interview_state, reset_interview, skip_question, start_interview, submit_answer
 from interview_app.ui import components, layout
@@ -34,6 +36,7 @@ def _init_state() -> None:
     st.session_state.setdefault("cv_text", None)
     st.session_state.setdefault("cv_file_hash", None)
     st.session_state.setdefault("profile", None)
+    st.session_state.setdefault("top_skills", [])
     st.session_state.setdefault("temperature", 0.3)
     st.session_state.setdefault("jd_text", None)
     st.session_state.setdefault("jd_file_hash", None)
@@ -56,6 +59,10 @@ def main() -> None:
     identity = require_user_identity(logger=logger)
     layout.render_topbar(user_label=f"{identity.display_name} ({identity.email})", show_logout=can_show_logout())
     st.caption("Upload a job description (required), optionally upload your CV, then run a mock interview loop.")
+
+    user_id = int(st.session_state.get("user_id") or 0)
+    if user_id and not (st.session_state.get("top_skills") or []):
+        st.session_state["top_skills"] = get_user_top_skills(user_id=user_id)
 
     api_key = get_openai_api_key()
     moderation_client = OpenAIModerationClient(api_key=api_key) if api_key else None
@@ -189,6 +196,7 @@ def main() -> None:
                             top_skills.append(skill)
                         if len(top_skills) >= 10:
                             break
+                    st.session_state["top_skills"] = top_skills
                     update_user_profile(user_id=user_id, profile=profile_dict, top_skills=top_skills)
                     logger.info("profile_persisted", extra={"event_name": "PROFILE_PERSISTED", "user_id": user_id})
             except Exception:
@@ -222,10 +230,17 @@ def main() -> None:
                         st.session_state["profile"] = profile_dict
 
                     settings = Settings(temperature=float(st.session_state["temperature"]))
+                    top_skills = list(st.session_state.get("top_skills") or [])
+                    transcript = list(st.session_state.get("transcript") or [])
+                    coverage = compute_skill_coverage(top_skills=top_skills, transcript=transcript)
+                    focus_skill = pick_next_focus_skill(top_skills=top_skills, coverage=coverage)
                     question = generate_interview_question(
                         profile=profile_dict,
                         job_description=str(st.session_state.get("jd_text") or ""),
-                        transcript=list(st.session_state.get("transcript") or []),
+                        transcript=transcript,
+                        top_skills=top_skills,
+                        focus_skill=focus_skill,
+                        skill_coverage=coverage,
                         settings=settings,
                         prompt_mode=str(st.session_state.get("prompt_mode") or DEFAULT_PROMPT_MODE),
                         session_id=st.session_state["session_id"],
@@ -355,10 +370,17 @@ def main() -> None:
                         "fallacy_hint": fallacy_hint.model_dump(),
                         "is_skipped": False,
                     }
+                    top_skills = list(st.session_state.get("top_skills") or [])
+                    full_transcript = transcript + [turn_dict]
+                    coverage = compute_skill_coverage(top_skills=top_skills, transcript=full_transcript)
+                    focus_skill = pick_next_focus_skill(top_skills=top_skills, coverage=coverage)
                     next_question = generate_interview_question(
                         profile=st.session_state.get("profile"),
                         job_description=safe_jd_text,
-                        transcript=transcript + [turn_dict],
+                        transcript=full_transcript,
+                        top_skills=top_skills,
+                        focus_skill=focus_skill,
+                        skill_coverage=coverage,
                         settings=settings,
                         prompt_mode=str(st.session_state.get("prompt_mode") or DEFAULT_PROMPT_MODE),
                         session_id=st.session_state["session_id"],
@@ -474,10 +496,17 @@ def main() -> None:
                             insert_answer(question_id=current_question_id, answer_text=None, is_skipped=True)
 
                         turn_dict = {"question": q.model_dump(), "answer": "", "is_skipped": True}
+                        top_skills = list(st.session_state.get("top_skills") or [])
+                        full_transcript = transcript + [turn_dict]
+                        coverage = compute_skill_coverage(top_skills=top_skills, transcript=full_transcript)
+                        focus_skill = pick_next_focus_skill(top_skills=top_skills, coverage=coverage)
                         next_question = generate_interview_question(
                             profile=st.session_state.get("profile"),
                             job_description=safe_jd_text,
-                            transcript=transcript + [turn_dict],
+                            transcript=full_transcript,
+                            top_skills=top_skills,
+                            focus_skill=focus_skill,
+                            skill_coverage=coverage,
                             settings=settings,
                             prompt_mode=str(st.session_state.get("prompt_mode") or DEFAULT_PROMPT_MODE),
                             session_id=st.session_state["session_id"],
@@ -526,10 +555,16 @@ def main() -> None:
                         )
                         raise RuntimeError("Job description blocked by safety checks")
 
+                    top_skills = list(st.session_state.get("top_skills") or [])
+                    coverage = compute_skill_coverage(top_skills=top_skills, transcript=transcript)
+                    focus_skill = pick_next_focus_skill(top_skills=top_skills, coverage=coverage)
                     next_question = generate_interview_question(
                         profile=st.session_state.get("profile"),
                         job_description=safe_jd_text,
                         transcript=transcript,
+                        top_skills=top_skills,
+                        focus_skill=focus_skill,
+                        skill_coverage=coverage,
                         settings=settings,
                         prompt_mode=str(st.session_state.get("prompt_mode") or DEFAULT_PROMPT_MODE),
                         session_id=st.session_state["session_id"],

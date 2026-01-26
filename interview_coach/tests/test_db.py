@@ -6,6 +6,7 @@ from pathlib import Path
 
 from interview_app.db import (
     create_question,
+    get_user_top_skills,
     insert_answer,
     insert_suggestion,
     link_user_vacancy,
@@ -54,6 +55,7 @@ def test_sqlite_persists_user_cv_profile_and_vacancy(tmp_path: Path) -> None:
     profile = json.loads(user_row["profile_json"])
     assert profile["summary"] == "hi"
     assert json.loads(user_row["top_skills_json"]) == ["python", "sql"]
+    assert get_user_top_skills(user_id=user_id, sqlite_db_path=db_path) == ["python", "sql"]
 
     vacancy_id = upsert_vacancy(
         position_title="Backend Engineer",

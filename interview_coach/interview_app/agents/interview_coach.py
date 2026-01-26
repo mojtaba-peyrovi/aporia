@@ -30,6 +30,9 @@ def generate_interview_question(
     profile: CandidateProfile | dict[str, Any] | None,
     job_description: str,
     transcript: list[dict[str, Any]],
+    top_skills: list[str] | None = None,
+    focus_skill: str | None = None,
+    skill_coverage: dict[str, int] | None = None,
     settings: Settings,
     prompt_mode: str,
     session_id: str | None = None,
@@ -41,7 +44,19 @@ def generate_interview_question(
         f"Job description (may be empty):\n{job_description}\n\n"
         f"Transcript so far (may be empty):\n{_safe_json(transcript)}\n\n"
     )
-    return call_structured_llm(
+    if top_skills:
+        user_content += (
+            f"Top skills to cover (use these exact strings in tags when relevant):\n{_safe_json(top_skills)}\n\n"
+        )
+    if skill_coverage:
+        user_content += f"Skill coverage so far (count of questions tagged per skill):\n{_safe_json(skill_coverage)}\n\n"
+    if focus_skill:
+        user_content += (
+            "Constraints:\n"
+            f"- Prioritize assessing this skill next: {focus_skill}\n"
+            "- Include the focus skill EXACTLY as one of the tags.\n\n"
+        )
+    question = call_structured_llm(
         system_prompt=get_interview_question_system_prompt(prompt_mode),
         user_content=user_content,
         result_type=InterviewQuestion,
@@ -49,6 +64,11 @@ def generate_interview_question(
         session_id=session_id,
         event_prefix="question_generation",
     )
+    if focus_skill and focus_skill.strip():
+        focus_normalized = focus_skill.strip().lower()
+        if not any(str(t).strip().lower() == focus_normalized for t in question.tags):
+            question.tags = list(question.tags) + [focus_skill.strip()]
+    return question
 
 
 def evaluate_interview_answer(

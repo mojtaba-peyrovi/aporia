@@ -386,6 +386,42 @@ def update_user_profile(
         )
 
 
+def get_user_top_skills(*, user_id: int, sqlite_db_path: Path | None = None) -> list[str]:
+    mysql_cfg = _load_mysql_config_from_env()
+    if mysql_cfg:
+        conn = _connect_mysql(mysql_cfg)
+        try:
+            _ensure_schema_mysql(conn)
+            cur = conn.cursor()
+            cur.execute("SELECT top_skills_json FROM users WHERE user_id=%s", (user_id,))
+            row = cur.fetchone()
+            cur.close()
+            raw = row[0] if row else None
+        finally:
+            conn.close()
+    else:
+        with _connect_sqlite(sqlite_db_path) as conn:
+            _ensure_schema_sqlite(conn)
+            row = conn.execute("SELECT top_skills_json FROM users WHERE user_id=?", (user_id,)).fetchone()
+            raw = row["top_skills_json"] if row else None
+
+    if raw is None or raw == "":
+        return []
+
+    if isinstance(raw, (list, tuple)):
+        return [str(s).strip() for s in raw if str(s).strip()]
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode("utf-8", errors="ignore")
+
+    try:
+        parsed = json.loads(str(raw))
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(s).strip() for s in parsed if str(s).strip()]
+
+
 def upsert_vacancy(
     *,
     position_title: str,
