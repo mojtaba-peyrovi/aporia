@@ -1,0 +1,47 @@
+3) Mock Interview Question
+
+Question:
+“Tell me about a time you improved kitchen operations or consistency during a busy service. What did you change, and how did you measure success?”
+
+4) Flawed Answers (for testing fallacy detection)
+Answer A — False Cause
+
+“I improved consistency by changing our prep labels and doing stricter station checklists before service. Right after we introduced the new labels, customer complaints dropped, so the labels were clearly the main reason the food quality improved. After that, service felt smoother every night.”
+
+Why it’s flawed:
+It assumes the labels caused the complaints to drop just because it happened afterward. Complaints could have dropped due to staffing changes, menu changes, seasonal demand, or just random variation.
+
+Answer B — Begging the Question
+
+“I improved operations by implementing a better prep system and making the line more organized. It worked because it was a good system—and we know it was good because it worked. After that, everyone respected the process more.”
+
+Why it’s flawed:
+Circular reasoning. It doesn’t prove why it was good using evidence (ticket times, waste, refires, comped dishes, etc.).
+
+Answer C — Equivocation
+
+“I improved consistency across service. We made the kitchen consistent: consistent prep, consistent taste, consistent timing. Since consistency improved, everyone trusted the kitchen more and we had fewer issues.”
+
+Why it’s flawed:
+“Consistency” is used in multiple meanings (taste, timing, process discipline) without specifying what changed and how it was measured, making the claim vague but persuasive.
+
+Answer D — Accident (Overgeneralization of a rule)
+
+“I enforced strict standardization: same plating, same garnish, same portioning, same timing rules for every dish. Standardization is always the best way to ensure quality, so we applied the same approach to everything—even specials and allergy modifications.”
+
+Why it’s flawed:
+Standardization helps, but “always” ignores cases where flexibility is necessary (specials, substitutions, allergies, ingredient variability). Over-applying the rule can reduce quality or safety.
+
+Answer E — Irrelevant Conclusion
+
+“I improved operations by reducing steps and simplifying prep. We removed extra garnishes and cut down on complicated techniques. Because we simplified the workflow, that proves the food quality was higher and guests were happier.”
+
+Why it’s flawed:
+Simplifying workflow can improve speed and reduce mistakes, but it doesn’t prove higher guest satisfaction or quality without evidence (reviews, returns, refires, NPS, etc.).
+
+Answer F — Loaded Assumption / Many Questions
+
+“When we rolled out new plating standards, some cooks struggled to follow them. That showed they didn’t care about quality and weren’t serious professionals, so I became stricter and stopped letting them question the process.”
+
+Why it’s flawed:
+It assumes the reason for struggle is lack of care/professionalism, ignoring plausible causes like unclear training, unrealistic pacing, missing prep, or inconsistent leadership.

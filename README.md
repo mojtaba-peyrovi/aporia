@@ -28,82 +28,16 @@ This is the full “happy path” flow from a user opening the app to exporting 
 
 ### System flowchart
 
-```mermaid
-flowchart TD
-  U[User] --> UI[Streamlit UI<br/>interview_coach/app.py]
+<img src='./system_flowchart.png'>
 
-  UI --> AUTH[Auth layer<br/>Streamlit OIDC st.login/st.user<br/>or one-time identity form]
-  AUTH --> DB[(DB<br/>MySQL when configured<br/>else SQLite fallback)]
 
-  UI --> UPLOADS[Uploads<br/>CV + JD]
-  UPLOADS --> PARSE[Text extraction<br/>PDF/DOCX/TXT]
-  PARSE --> AGENTS[Agents (PydanticAI)]
 
-  AGENTS --> CVPROF[CV Profiler]
-  AGENTS --> QGEN[Question Generator<br/>+ skill coverage]
-  AGENTS --> EVAL[Answer Evaluator]
-  AGENTS --> FALLACY[Fallacy Judge]
-
-  CVPROF --> DB
-  QGEN --> DB
-  EVAL --> DB
-  FALLACY --> DB
-
-  UI --> INTERVIEW[Interview loop<br/>submit once / skip / next]
-  INTERVIEW --> DB
-
-  UI --> ANALYTICS[Analytics dashboard<br/>charts + stats]
-  ANALYTICS --> DB
-  ANALYTICS --> PDF[PDF generator]
-  PDF --> REPORT[Download + optional save path]
-
-  DB --> ANALYTICS
-  DB --> UI
-```
 
 ### Interview session sequence
 
-```mermaid
-sequenceDiagram
-  participant User
-  participant UI as Streamlit UI (app.py)
-  participant DB as DB (MySQL/SQLite)
-  participant A1 as Agent: CV Profiler
-  participant A2 as Agent: Question Generator
-  participant A3 as Agent: Answer Evaluator
-  participant A4 as Agent: Fallacy Judge
+<img src='./sequence_diagram.png'>
 
-  User->>UI: Open app
-  UI->>UI: Initialize session_state (session_id, interview state)
-  UI->>UI: Login (OIDC) or identity form
-  UI->>DB: Upsert user (email, first/last)
 
-  User->>UI: Upload CV + JD (+ title)
-  UI->>UI: Extract text from files (PDF/DOCX/TXT)
-  UI->>A1: Profile from CV text (+ JD context)
-  A1-->>UI: CandidateProfile (structured)
-  UI->>DB: Save CV text/hash + profile_json + top_skills_json
-  UI->>DB: Upsert vacancy (JD hash/text, title) + link user_vacancy
-
-  User->>UI: Start / Next Question
-  UI->>DB: Fetch prior questions/skills coverage
-  UI->>A2: Generate question (focus least-covered skill)
-  A2-->>UI: InterviewQuestion (structured)
-  UI->>DB: Insert question (+ tags/order)
-
-  User->>UI: Submit answer (one-time)
-  UI->>A3: Evaluate answer vs question/JD/CV
-  A3-->>UI: ScoreCard + suggested rewrite + improvements
-  UI->>A4: Judge fallacies (optional coaching hint)
-  A4-->>UI: FallacyHint (name/definition/rationale)
-  UI->>DB: Insert answer + suggestion (+ fallacy fields)
-  UI-->>User: Render human-readable feedback (no JSON)
-
-  User->>UI: View analytics + export PDF
-  UI->>DB: Query metrics + population distribution
-  UI-->>User: Render charts
-  UI->>UI: Build PDF bytes and offer download
-```
 
 ## Core components (what each piece does)
 
