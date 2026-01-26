@@ -14,6 +14,8 @@ wheels/
 logs/
 *.log
 .streamlit/
+interview_coach/reports/
+interview_coach/.data/
 
 # Test artifacts
 .pytest_cache/

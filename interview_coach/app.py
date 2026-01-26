@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 
 import streamlit as st
 
@@ -31,6 +33,7 @@ from interview_app.services.skill_coverage import compute_skill_coverage, pick_n
 from interview_app.services.uploads import upload_hash
 from interview_app.session_state import new_interview_state, reset_interview, skip_question, start_interview, submit_answer
 from interview_app.charts import render_avg_bars, render_correctness_over_time, render_population_distribution
+from interview_app.pdf_report import AnalyticsPdfInputs, build_analytics_pdf_bytes
 from interview_app.ui import components, layout
 
 
@@ -46,6 +49,9 @@ def _init_state() -> None:
     st.session_state.setdefault("position_title", "")
     st.session_state.setdefault("vacancy_id", None)
     st.session_state.setdefault("user_vacancy_id", None)
+    st.session_state.setdefault("analytics_pdf_bytes", None)
+    st.session_state.setdefault("analytics_pdf_name", None)
+    st.session_state.setdefault("analytics_pdf_path", None)
     for key, value in new_interview_state().items():
         st.session_state.setdefault(key, value)
     st.session_state.setdefault("answer_draft", "")
@@ -684,6 +690,53 @@ def main() -> None:
                     user_value=population.get("user_avg_correctness"),
                 )
                 logger.info("analytics_rendered", extra={"event_name": "ANALYTICS_RENDERED"})
+
+                with st.expander("PDF report", expanded=False):
+                    if st.button("Generate PDF report", key="analytics_generate_pdf"):
+                        try:
+                            pdf_bytes = build_analytics_pdf_bytes(
+                                AnalyticsPdfInputs(
+                                    user_label=f"{identity.display_name} ({identity.email})",
+                                    position_title=str(st.session_state.get("position_title") or "") or None,
+                                    generated_at=datetime.now(tz=timezone.utc),
+                                    summary=summary,
+                                    timeline=timeline,
+                                )
+                            )
+                        except Exception as e:
+                            st.error(f"Failed to generate PDF: {e}")
+                            logger.exception("analytics_pdf_failed", extra={"event_name": "ANALYTICS_PDF_FAILED"})
+                        else:
+                            reports_dir = Path(__file__).resolve().parent / "reports"
+                            reports_dir.mkdir(parents=True, exist_ok=True)
+                            timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+                            file_name = f"analytics_{user_vacancy_id}_{timestamp}.pdf"
+                            report_path = reports_dir / file_name
+                            report_path.write_bytes(pdf_bytes)
+                            st.session_state["analytics_pdf_bytes"] = pdf_bytes
+                            st.session_state["analytics_pdf_name"] = file_name
+                            st.session_state["analytics_pdf_path"] = str(report_path)
+                            logger.info(
+                                "analytics_pdf_saved",
+                                extra={
+                                    "event_name": "ANALYTICS_PDF_SAVED",
+                                    "report_path": str(report_path),
+                                    "user_vacancy_id": user_vacancy_id,
+                                },
+                            )
+
+                    pdf_bytes = st.session_state.get("analytics_pdf_bytes")
+                    pdf_name = st.session_state.get("analytics_pdf_name") or "analytics_report.pdf"
+                    pdf_path = st.session_state.get("analytics_pdf_path")
+                    if pdf_bytes:
+                        st.download_button(
+                            "Download PDF report",
+                            data=pdf_bytes,
+                            file_name=pdf_name,
+                            mime="application/pdf",
+                        )
+                        if pdf_path:
+                            st.caption(f"Saved to: {pdf_path}")
 
         with st.expander("Raw CV text", expanded=False):
             st.text_area(
