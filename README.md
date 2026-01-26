@@ -39,6 +39,9 @@ This is the full “happy path” flow from a user opening the app to exporting 
 
 
 
+### ER Diagram
+<img src='./erd.png'>
+
 ## Core components (what each piece does)
 
 ### UI / Orchestration (`interview_coach/app.py`)
@@ -118,11 +121,38 @@ docker run --rm -p 8080:8080 -e PORT=8080 -e OPENAI_API_KEY=... aporia:latest
 
 Then open `http://localhost:8080`.
 
+
 ## Testing
 
 ```bash
 uv run pytest -q
 ```
+
+## Query the data on MySQL
+1) Start MySQL + app:
+```
+docker compose up -d
+```
+2) Check they’re running
+```
+docker compose ps
+```
+
+3) If Mysql is healthy, query it:
+
+To see all tables
+```
+docker compose exec mysql mysql -u aporia -paporia -D aporia -e "SHOW TABLES;"
+```
+<img src='./tables.png'>
+
+
+To see all users:
+```
+ompose exec mysql mysql -u aporia -paporia -D aporia -e "SELECT * FROM users;"
+```
+
+<img src='./users.png'>
 
 ## Notes on auth (Streamlit native OIDC)
 

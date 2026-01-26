@@ -58,7 +58,7 @@ def _init_state() -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Interview Practice Coach", page_icon="🧩", layout="wide")
+    st.set_page_config(page_title="Aporia", page_icon="🧩", layout="wide")
     _init_state()
 
     setup_logging()
