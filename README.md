@@ -22,6 +22,119 @@ A polished, single-page Streamlit app for practicing interview questions with hu
 - `interview_coach/interview_app/pdf_report.py`: PDF report generation
 - `interview_coach/interview_app/logging_setup.py`: stdout + rotating file logs
 
+## End-to-end flow (how the app works)
+
+This is the full “happy path” flow from a user opening the app to exporting a PDF report.
+
+### System flowchart
+
+```mermaid
+flowchart TD
+  U[User] --> UI[Streamlit UI<br/>interview_coach/app.py]
+
+  UI --> AUTH[Auth layer<br/>Streamlit OIDC st.login/st.user<br/>or one-time identity form]
+  AUTH --> DB[(DB<br/>MySQL when configured<br/>else SQLite fallback)]
+
+  UI --> UPLOADS[Uploads<br/>CV + JD]
+  UPLOADS --> PARSE[Text extraction<br/>PDF/DOCX/TXT]
+  PARSE --> AGENTS[Agents (PydanticAI)]
+
+  AGENTS --> CVPROF[CV Profiler]
+  AGENTS --> QGEN[Question Generator<br/>+ skill coverage]
+  AGENTS --> EVAL[Answer Evaluator]
+  AGENTS --> FALLACY[Fallacy Judge]
+
+  CVPROF --> DB
+  QGEN --> DB
+  EVAL --> DB
+  FALLACY --> DB
+
+  UI --> INTERVIEW[Interview loop<br/>submit once / skip / next]
+  INTERVIEW --> DB
+
+  UI --> ANALYTICS[Analytics dashboard<br/>charts + stats]
+  ANALYTICS --> DB
+  ANALYTICS --> PDF[PDF generator]
+  PDF --> REPORT[Download + optional save path]
+
+  DB --> ANALYTICS
+  DB --> UI
+```
+
+### Interview session sequence
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant UI as Streamlit UI (app.py)
+  participant DB as DB (MySQL/SQLite)
+  participant A1 as Agent: CV Profiler
+  participant A2 as Agent: Question Generator
+  participant A3 as Agent: Answer Evaluator
+  participant A4 as Agent: Fallacy Judge
+
+  User->>UI: Open app
+  UI->>UI: Initialize session_state (session_id, interview state)
+  UI->>UI: Login (OIDC) or identity form
+  UI->>DB: Upsert user (email, first/last)
+
+  User->>UI: Upload CV + JD (+ title)
+  UI->>UI: Extract text from files (PDF/DOCX/TXT)
+  UI->>A1: Profile from CV text (+ JD context)
+  A1-->>UI: CandidateProfile (structured)
+  UI->>DB: Save CV text/hash + profile_json + top_skills_json
+  UI->>DB: Upsert vacancy (JD hash/text, title) + link user_vacancy
+
+  User->>UI: Start / Next Question
+  UI->>DB: Fetch prior questions/skills coverage
+  UI->>A2: Generate question (focus least-covered skill)
+  A2-->>UI: InterviewQuestion (structured)
+  UI->>DB: Insert question (+ tags/order)
+
+  User->>UI: Submit answer (one-time)
+  UI->>A3: Evaluate answer vs question/JD/CV
+  A3-->>UI: ScoreCard + suggested rewrite + improvements
+  UI->>A4: Judge fallacies (optional coaching hint)
+  A4-->>UI: FallacyHint (name/definition/rationale)
+  UI->>DB: Insert answer + suggestion (+ fallacy fields)
+  UI-->>User: Render human-readable feedback (no JSON)
+
+  User->>UI: View analytics + export PDF
+  UI->>DB: Query metrics + population distribution
+  UI-->>User: Render charts
+  UI->>UI: Build PDF bytes and offer download
+```
+
+## Core components (what each piece does)
+
+### UI / Orchestration (`interview_coach/app.py`)
+
+- Owns Streamlit page layout, session state, and the interview state machine.
+- Gating: requires CV + JD upload before interview; “submit answer” is one-time per question; “skip” persists a skipped record.
+- Renders only human-friendly fields (no raw JSON).
+
+### Persistence layer (`interview_coach/interview_app/db.py`)
+
+- Chooses **MySQL** when `MYSQL_HOST`/`MYSQL_DATABASE`/`MYSQL_USER`/`MYSQL_PASSWORD` are set, otherwise uses **SQLite** files under `interview_coach/.data/`.
+- Stores: users, vacancies (JDs), user-vacancy links, questions, answers, suggestions, and analytics aggregations.
+
+### Agents (`interview_coach/interview_app/agents/`)
+
+- **CV Profiler**: converts CV text into a structured `CandidateProfile` used to tailor questions and feedback.
+- **Question Generator**: generates interview questions and tags them with skill focus; uses a least-covered strategy to rotate through top skills.
+- **Answer Evaluator**: produces structured scoring (relevance/correctness), improvements, red flags, and a suggested rewrite.
+- **Fallacy Judge**: optionally flags likely fallacies and provides a coaching-style explanation and disclaimer.
+
+### Services (`interview_coach/interview_app/services/`)
+
+- Upload parsing + hashing, safety checks, fallacy formatting, and skill-coverage logic used by the UI/agents.
+
+### Analytics + PDF
+
+- Analytics queries compute per-user metrics and (optionally) compare to population aggregates.
+- Charts render inside Streamlit (`interview_coach/interview_app/charts.py`).
+- PDF report generation produces a downloadable report (`interview_coach/interview_app/pdf_report.py`).
+
 ## Quickstart (local, SQLite fallback)
 
 Prereqs: Python 3.11+ and `uv`.
