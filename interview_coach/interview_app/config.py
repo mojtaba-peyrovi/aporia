@@ -9,7 +9,7 @@ from typing import Any
 @dataclass(frozen=True)
 class Settings:
     model: str = "gpt-4.1-mini"
-    temperature: float = 0.3
+    temperature: float = 1.0
 
 
 def load_env() -> None:
