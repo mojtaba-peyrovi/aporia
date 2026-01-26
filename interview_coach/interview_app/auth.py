@@ -6,6 +6,7 @@ from typing import Any
 import streamlit as st
 
 from interview_app.db import upsert_user_identity
+from interview_app.ui.layout import find_logo_path
 
 
 @dataclass(frozen=True)
@@ -88,6 +89,11 @@ def require_user_identity(*, logger) -> UserIdentity:
         return identity
 
     with st.form("user_identity_form", border=True):
+        logo_path = find_logo_path()
+        if logo_path:
+            _, col, _ = st.columns([1, 2, 1])
+            with col:
+                st.image(str(logo_path), width=144)
         st.subheader("Complete your profile")
         st.caption("We only ask once. This is stored in the app database.")
         email = st.text_input("Email", value=identity.email if identity else "")

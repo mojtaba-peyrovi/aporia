@@ -5,6 +5,14 @@ from pathlib import Path
 import streamlit as st
 
 
+def find_logo_path() -> Path | None:
+    candidate_paths = [
+        Path.cwd() / "aporia_logo.png",
+        Path(__file__).resolve().parents[3] / "aporia_logo.png",
+    ]
+    return next((path for path in candidate_paths if path.exists()), None)
+
+
 def inject_global_css() -> None:
     st.markdown(
         """
@@ -54,16 +62,12 @@ def inject_global_css() -> None:
 def render_topbar(*, user_label: str, show_logout: bool) -> None:
     left, right = st.columns([3, 2], vertical_alignment="center")
     with left:
-        candidate_paths = [
-            Path.cwd() / "aporia_logo.png",
-            Path(__file__).resolve().parents[3] / "aporia_logo.png",
-        ]
-        logo_path = next((path for path in candidate_paths if path.exists()), None)
+        logo_path = find_logo_path()
 
         if logo_path:
             logo_col, title_col = st.columns([1, 8], vertical_alignment="center")
             with logo_col:
-                st.image(str(logo_path), width=36)
+                st.image(str(logo_path), width=72)
             with title_col:
                 st.markdown('<div class="aporia-logo">Interview Practice Coach</div>', unsafe_allow_html=True)
         else:
