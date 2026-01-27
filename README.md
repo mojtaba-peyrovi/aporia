@@ -2,6 +2,89 @@
 
 A polished, single-page Streamlit app for practicing interview questions with human-readable, structured feedback, skill-coverage guidance, and optional fallacy/logic coaching. It supports local development, MySQL persistence (Docker Compose), and an app-only container that's Cloud Run friendly.
 
+## The Inspiration
+
+This project is inspired by Aristotle’s work on reasoning and argument quality in the *Organon* (especially *Sophistical Refutations*), which catalogues common ways language and logic can mislead. In interviews, those same patterns often show up as unclear claims, overconfident generalizations, or “sounds-right” explanations that don’t actually answer the question.
+
+In Aporia, your answer can be scanned for likely fallacy patterns. When one is detected, the app shows a **Fallacy Detected** ribbon plus a “read more” explanation (definition, why the answer matches the pattern, why it can be a red flag in interviews, and a disclaimer that this is probabilistic coaching—not a truth-judgement).
+
+### Why the name “Aporia”?
+
+In philosophy, **aporia** is a state of puzzlement or an “impasse” where a contradiction, ambiguity, or gap in reasoning is revealed. That’s exactly the moment good coaching targets: turning confusion into clarity, and replacing fragile reasoning with a grounded, interview-ready explanation.
+
+### The 13 fallacies (Aristotle) — meaning + interview-style example
+
+Aristotle’s catalogue is commonly summarized as **13 fallacies**: **6 “in language”** (due to wording) and **7 “outside language”** (due to reasoning).
+
+#### Fallacies “in language” (in dictione)
+
+1) **Equivocation**
+   - Meaning: one word/phrase used in two different senses.
+   - Example: “I’m *transparent* as a leader—everyone can see through me.” (transparent = open vs easily defeated)
+   - In the app: flagged when a key term (“ownership”, “lead”, “impact”, “scale”) shifts meaning mid-answer.
+
+2) **Amphiboly**
+   - Meaning: ambiguous grammar/sentence structure creates multiple readings.
+   - Example: “I improved the model with my manager.” (did you improve it together, or for your manager?)
+   - In the app: flagged when phrasing makes responsibility or causality unclear; the suggestion typically rewrites for clarity.
+
+3) **Composition**
+   - Meaning: attributes of parts are wrongly applied to the whole.
+   - Example: “Each component is secure, so the system is secure.”
+   - In the app: flagged when you infer a system-level guarantee from isolated successes without integration evidence.
+
+4) **Division**
+   - Meaning: attribute of the whole is wrongly applied to each part.
+   - Example: “Our team is high-performing, so every project I did was high-performing.”
+   - In the app: flagged when you imply personal or component-level excellence solely from team/company reputation.
+
+5) **Accent**
+   - Meaning: meaning changes based on emphasis/quotation/context.
+   - Example: “I *only* changed configuration.” (minimizes impact; the emphasis changes accountability)
+   - In the app: flagged when selective emphasis or quoted phrasing is used to dodge the core question; coaching nudges a direct answer.
+
+6) **Form of expression (Figure of speech)**
+   - Meaning: grammatical form misleads (e.g., treating “looks like X” as “is X”).
+   - Example: “This seems optimal, therefore it is optimal.”
+   - In the app: flagged when hedged language (“seems”, “probably”) is presented as a firm conclusion without support.
+
+#### Fallacies “outside language” (extra dictionem)
+
+7) **Accident**
+   - Meaning: applying a general rule to a special case where it doesn’t fit.
+   - Example: “We always ship fast, so skipping QA here was fine.”
+   - In the app: flagged when a rule of thumb replaces situational judgment; coaching asks for constraints/tradeoffs.
+
+8) **Qualified vs absolute (Secundum quid et simpliciter)**
+   - Meaning: moving from “in some respect” to “absolutely”.
+   - Example: “Latency dropped in one scenario, so the system is faster.”
+   - In the app: flagged when scope/conditions are missing; suggestion adds boundaries (“under X load”, “for Y cohort”).
+
+9) **Ignoratio elenchi (Irrelevant conclusion)**
+   - Meaning: answering a different question than the one asked.
+   - Example: Asked: “Why did it fail?” Answer: “We worked really hard and learned a lot.”
+   - In the app: flagged when the answer is off-target; coaching pushes a tight structure: cause → evidence → fix → result.
+
+10) **Begging the question (Petitio principii)**
+   - Meaning: the conclusion is assumed in the premises.
+   - Example: “I’m qualified because I’m the best person for the role.”
+   - In the app: flagged when claims are self-justifying; suggestion adds concrete evidence (metrics, decisions, tradeoffs).
+
+11) **Affirming the consequent**
+   - Meaning: “If P then Q; Q; therefore P.”
+   - Example: “Strong teams have high uptime; we have high uptime; therefore our process is strong.”
+   - In the app: flagged when correlation is treated as proof; coaching asks for alternative explanations and direct causality.
+
+12) **False cause (Non causa pro causa)**
+   - Meaning: treating something as the cause when it isn’t (mistaken cause).
+   - Example: “We refactored and then revenue rose, so the refactor caused the revenue increase.”
+   - In the app: flagged when post-hoc storytelling appears; suggestion adds validation steps (A/B, controlled rollout, attribution).
+
+13) **Many questions (Complex question)**
+   - Meaning: a loaded multi-part question that forces hidden assumptions.
+   - Example: “How did you fix the bug and why did your design cause it in the first place?”
+   - In the app: flagged when the question (or your answer) bundles multiple claims; coaching recommends decomposing and answering parts explicitly.
+
 ## Demo features
 
 - CV + Job Description upload (PDF/DOCX/TXT) with automatic parsing
