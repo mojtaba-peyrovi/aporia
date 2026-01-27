@@ -121,6 +121,59 @@ docker run --rm -p 8080:8080 -e PORT=8080 -e OPENAI_API_KEY=... aporia:latest
 
 Then open `http://localhost:8080`.
 
+## Deployment (GCP Cloud Run)
+
+This app is deployed as an **app-only** container on **Google Cloud Run** (region: `europe-west10`). The container image is stored in **Artifact Registry** and deployed to a Cloud Run service named `aporia`.
+
+Live URL:
+- `https://aporia-396340266386.europe-west10.run.app/`
+
+### Tech used
+
+- **Cloud Run**: serverless container runtime (HTTP, autoscaling)
+- **Artifact Registry**: Docker image storage
+- **Cloud Build**: builds the Docker image from this repo and pushes it to Artifact Registry
+- Optional **Cloud SQL (MySQL)**: recommended persistent database in production (configured via env vars)
+
+### Deploy/update steps (CLI)
+
+Prereqs: `gcloud` installed, authenticated, and the project set.
+
+```bash
+gcloud config set project second-try-ml
+gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com
+```
+
+Build + push:
+
+```bash
+gcloud builds submit --tag europe-west10-docker.pkg.dev/second-try-ml/aporia/aporia:latest
+```
+
+Deploy:
+
+```bash
+gcloud run deploy aporia \
+  --image europe-west10-docker.pkg.dev/second-try-ml/aporia/aporia:latest \
+  --region europe-west10 \
+  --port 8080 \
+  --allow-unauthenticated
+```
+
+Configure env vars (minimum required):
+
+```bash
+gcloud run services update aporia \
+  --region europe-west10 \
+  --set-env-vars OPENAI_API_KEY=sk-...
+```
+
+Get the service URL:
+
+```bash
+gcloud run services describe aporia --region europe-west10 --format="value(status.url)"
+```
+
 
 ## Testing
 
