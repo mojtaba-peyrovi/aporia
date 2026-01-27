@@ -3,6 +3,7 @@
 A polished, single-page Streamlit app for practicing interview questions with human-readable, structured feedback, skill-coverage guidance, and optional fallacy/logic coaching. It supports local development, MySQL persistence (Docker Compose), and an app-only container that's Cloud Run friendly.
 
 ## The Inspiration
+<img src='./aristotle.jpg'>
 
 This project is inspired by Aristotle’s work on reasoning and argument quality in the *Organon* (especially *Sophistical Refutations*), which catalogues common ways language and logic can mislead. In interviews, those same patterns often show up as unclear claims, overconfident generalizations, or “sounds-right” explanations that don’t actually answer the question.
 
