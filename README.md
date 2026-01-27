@@ -2,6 +2,7 @@
 
 A polished, single-page Streamlit app for practicing interview questions with human-readable, structured feedback, skill-coverage guidance, and optional fallacy/logic coaching. It supports local development, MySQL persistence (Docker Compose), and an app-only container that's Cloud Run friendly.
 
+- The app is deployed on Google Cloud Platform and can be found here: https://aporia-396340266386.europe-west10.run.app/
 ## The Inspiration
 <img src='./aristotle.jpg'>
 
