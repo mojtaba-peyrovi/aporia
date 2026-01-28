@@ -18,6 +18,26 @@ class _DefaultFieldsFilter(logging.Filter):
 
 
 def setup_logging(log_dir: Path | None = None, level: int = logging.INFO) -> None:
+    """Configure application logging (idempotent).
+
+    This sets up the *root* logger with two handlers:
+
+    - A rotating file handler writing to ``app.log`` (2 MB max per file, 5 backups, UTF-8).
+    - A stream handler writing to stderr/stdout (depending on the runtime).
+
+    Both handlers share the same formatter and attach a filter that ensures every log record
+    has ``session_id`` and ``event_name`` attributes (defaulting to ``"-"``) so log formatting
+    never fails when those fields are missing.
+
+    By default, logs are written to ``<project>/logs/app.log`` where ``<project>`` is the
+    ``interview_coach`` directory (derived from this module's location). Repeated calls are
+    a no-op to avoid adding duplicate handlers.
+
+    Args:
+        log_dir: Directory to place log files in. If not provided, defaults to
+            ``interview_coach/logs``.
+        level: Logging level to apply to the root logger and both handlers.
+    """
     global _CONFIGURED
     if _CONFIGURED:
         return

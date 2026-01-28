@@ -11,6 +11,8 @@ from typing import Any, Iterable
 
 @dataclass(frozen=True)
 class MySQLConfig:
+    """Connection settings for a MySQL backend (loaded from environment variables)."""
+
     host: str
     port: int
     user: str
@@ -19,10 +21,16 @@ class MySQLConfig:
 
 
 def _utc_now_iso() -> str:
+    """Return the current UTC timestamp as an ISO-8601 string (no microseconds)."""
     return datetime.now(tz=timezone.utc).replace(microsecond=0).isoformat()
 
 
 def _default_sqlite_db_path() -> Path:
+    """Return the default SQLite database path and ensure its parent directory exists.
+
+    The default location is ``<repo>/interview_coach/.data/aporia.sqlite3`` (derived from
+    this module path).
+    """
     base_dir = Path(__file__).resolve().parents[1]
     data_dir = base_dir / ".data"
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -30,6 +38,16 @@ def _default_sqlite_db_path() -> Path:
 
 
 def _load_mysql_config_from_env() -> MySQLConfig | None:
+    """Load MySQL configuration from ``MYSQL_*`` environment variables.
+
+    Returns None when MySQL is not configured (i.e., ``MYSQL_HOST`` is unset). If
+    ``MYSQL_HOST`` is set but required variables are missing, this raises.
+
+    Expected variables:
+    - ``MYSQL_HOST`` (enables MySQL)
+    - ``MYSQL_DATABASE``, ``MYSQL_USER``, ``MYSQL_PASSWORD`` (required when enabled)
+    - ``MYSQL_PORT`` (optional; defaults to 3306)
+    """
     host = getenv("MYSQL_HOST")
     database = getenv("MYSQL_DATABASE")
     user = getenv("MYSQL_USER")
@@ -50,6 +68,12 @@ def _load_mysql_config_from_env() -> MySQLConfig | None:
 
 
 def _connect_sqlite(db_path: Path | None = None) -> sqlite3.Connection:
+    """Connect to SQLite and enable conveniences used by this module.
+
+    - Uses :func:`_default_sqlite_db_path` when ``db_path`` is not provided.
+    - Configures ``sqlite3.Row`` for dict-like access.
+    - Enables foreign keys.
+    """
     path = db_path or _default_sqlite_db_path()
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
@@ -58,6 +82,7 @@ def _connect_sqlite(db_path: Path | None = None) -> sqlite3.Connection:
 
 
 def _ensure_schema_sqlite(conn: sqlite3.Connection) -> None:
+    """Create required SQLite tables if they do not already exist."""
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -152,6 +177,11 @@ def _ensure_schema_sqlite(conn: sqlite3.Connection) -> None:
 
 
 def _connect_mysql(cfg: MySQLConfig):
+    """Connect to a MySQL database using ``mysql.connector``.
+
+    Raises:
+        RuntimeError: If MySQL is configured but the connector dependency is not installed.
+    """
     try:
         import mysql.connector  # type: ignore
     except Exception as e:  # pragma: no cover
@@ -171,6 +201,7 @@ def _connect_mysql(cfg: MySQLConfig):
 
 
 def _ensure_schema_mysql(conn) -> None:  # pragma: no cover
+    """Create required MySQL tables if they do not already exist."""
     cur = conn.cursor()
     cur.execute(
         """
@@ -268,6 +299,11 @@ def _ensure_schema_mysql(conn) -> None:  # pragma: no cover
 
 
 def _json_dumps(value: Any) -> str:
+    """Serialize a value to compact JSON for storage (UTF-8 friendly).
+
+    Uses compact separators to reduce storage size and ``ensure_ascii=False`` so Unicode
+    stays readable when inspecting the DB.
+    """
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -278,6 +314,20 @@ def upsert_user_identity(
     last_name: str,
     sqlite_db_path: Path | None = None,
 ) -> int:
+    """Insert or update a user identity and return the user's id.
+
+    Uses MySQL when configured via env vars; otherwise falls back to SQLite.
+    The user's ``last_login_at`` is updated on every call.
+
+    Args:
+        email: User email (unique identifier).
+        first_name: User first name.
+        last_name: User last name.
+        sqlite_db_path: Optional SQLite DB path override (used only when MySQL is not configured).
+
+    Returns:
+        The numeric ``user_id``.
+    """
     mysql_cfg = _load_mysql_config_from_env()
     if mysql_cfg:
         conn = _connect_mysql(mysql_cfg)
@@ -330,6 +380,10 @@ def update_user_cv(
     cv_text: str,
     sqlite_db_path: Path | None = None,
 ) -> None:
+    """Persist the user's uploaded CV (hash + extracted text).
+
+    Uses MySQL when configured via env vars; otherwise falls back to SQLite.
+    """
     mysql_cfg = _load_mysql_config_from_env()
     if mysql_cfg:
         conn = _connect_mysql(mysql_cfg)
@@ -360,6 +414,14 @@ def update_user_profile(
     top_skills: Iterable[str],
     sqlite_db_path: Path | None = None,
 ) -> None:
+    """Store the parsed candidate profile and top skills for a user.
+
+    Args:
+        user_id: User id to update.
+        profile: JSON-serializable dict representing the candidate profile.
+        top_skills: Iterable of skill strings (stored as JSON).
+        sqlite_db_path: Optional SQLite DB path override (used only when MySQL is not configured).
+    """
     profile_json = _json_dumps(profile)
     top_skills_json = _json_dumps(list(top_skills))
 
@@ -387,6 +449,11 @@ def update_user_profile(
 
 
 def get_user_top_skills(*, user_id: int, sqlite_db_path: Path | None = None) -> list[str]:
+    """Fetch the user's stored top skills list.
+
+    Handles MySQL JSON columns and SQLite TEXT storage. Returns an empty list if the
+    value is missing or cannot be parsed.
+    """
     mysql_cfg = _load_mysql_config_from_env()
     if mysql_cfg:
         conn = _connect_mysql(mysql_cfg)
@@ -429,6 +496,13 @@ def upsert_vacancy(
     jd_text: str,
     sqlite_db_path: Path | None = None,
 ) -> int:
+    """Insert or update a vacancy and return its id.
+
+    Uniqueness is based on ``(position_title, jd_file_hash)``; ``jd_text`` is updated on conflict.
+
+    Raises:
+        ValueError: If ``position_title`` is empty/blank.
+    """
     if not position_title.strip():
         raise ValueError("position_title must be non-empty")
 
@@ -485,6 +559,10 @@ def link_user_vacancy(
     vacancy_id: int,
     sqlite_db_path: Path | None = None,
 ) -> int:
+    """Create or fetch the link between a user and a vacancy.
+
+    Returns the ``user_vacancy_id`` used as the parent key for questions/answers/suggestions.
+    """
     mysql_cfg = _load_mysql_config_from_env()
     if mysql_cfg:
         conn = _connect_mysql(mysql_cfg)
@@ -542,6 +620,14 @@ def create_question(
     question_order: int,
     sqlite_db_path: Path | None = None,
 ) -> int:
+    """Insert or update a question for a user-vacancy interview session.
+
+    Questions are uniquely identified by ``(user_vacancy_id, question_order)``. Skill tags
+    are stored as JSON (when provided).
+
+    Raises:
+        ValueError: If ``question_text`` is empty/blank.
+    """
     if not question_text.strip():
         raise ValueError("question_text must be non-empty")
 
@@ -611,6 +697,20 @@ def insert_answer(
     is_skipped: bool,
     sqlite_db_path: Path | None = None,
 ) -> int:
+    """Insert an answer record for a question and return its id.
+
+    Each question can have at most one answer row. If an answer already exists, the
+    existing ``answer_id`` is returned and no changes are made.
+
+    Args:
+        question_id: The question being answered.
+        answer_text: Answer text, required when ``is_skipped`` is False.
+        is_skipped: Whether the question was skipped (forces ``answer_text`` to None).
+        sqlite_db_path: Optional SQLite DB path override (used only when MySQL is not configured).
+
+    Raises:
+        ValueError: If ``is_skipped`` is False and ``answer_text`` is empty.
+    """
     if is_skipped:
         answer_text = None
     elif answer_text is None or not str(answer_text).strip():
@@ -669,6 +769,11 @@ def insert_suggestion(
     coach_hint: str | None,
     sqlite_db_path: Path | None = None,
 ) -> int:
+    """Insert a suggestion/scorecard summary for a question and return its id.
+
+    Each question can have at most one suggestion row. If a suggestion already exists,
+    the existing ``suggestion_id`` is returned and no changes are made.
+    """
     mysql_cfg = _load_mysql_config_from_env()
     if mysql_cfg:
         conn = _connect_mysql(mysql_cfg)
@@ -746,6 +851,11 @@ def fetch_user_vacancy_analytics(
     user_vacancy_id: int,
     sqlite_db_path: Path | None = None,
 ) -> dict[str, Any]:
+    """Fetch simple performance analytics for a user-vacancy interview session.
+
+    Returns summary statistics and a per-question timeline derived from questions, answers,
+    and suggestions.
+    """
     mysql_cfg = _load_mysql_config_from_env()
     if mysql_cfg:
         conn = _connect_mysql(mysql_cfg)
@@ -806,6 +916,7 @@ def fetch_user_vacancy_analytics(
     answered_questions = len(answered_rows)
 
     def _avg_int(key: str) -> float | None:
+        """Average an integer column over answered questions, or return None if missing."""
         values = [int(row[key]) for row in answered_rows if row.get(key) is not None]
         if not values:
             return None
@@ -849,6 +960,12 @@ def fetch_population_correctness_distribution(
     user_id: int,
     sqlite_db_path: Path | None = None,
 ) -> dict[str, Any]:
+    """Compute a user's average correctness and their percentile vs. other users.
+
+    The population distribution is calculated as the per-user average of suggestion correctness.
+    Percentile is computed as the percentage of users whose average correctness is less than or
+    equal to the current user's value.
+    """
     mysql_cfg = _load_mysql_config_from_env()
     if mysql_cfg:
         conn = _connect_mysql(mysql_cfg)

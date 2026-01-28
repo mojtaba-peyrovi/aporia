@@ -14,6 +14,21 @@ TModel = TypeVar("TModel", bound=BaseModel)
 
 
 def _extract_json(text: str) -> Any:
+    """Parse a JSON object from model output text.
+
+    The primary path expects ``text`` to be valid JSON. As a fallback, it tries to locate
+    the first ``"{"`` and last ``"}"`` and parse the substring, which helps recover from
+    occasional surrounding prose/whitespace.
+
+    Args:
+        text: Raw model output text.
+
+    Returns:
+        The decoded JSON value (typically a dict for this app).
+
+    Raises:
+        json.JSONDecodeError: If no valid JSON can be extracted.
+    """
     try:
         return json.loads(text)
     except JSONDecodeError:
@@ -25,6 +40,20 @@ def _extract_json(text: str) -> Any:
 
 
 def _openai_chat_json(*, system_prompt: str, user_content: str, settings: Settings) -> Any:
+    """Call OpenAI Chat Completions and return the parsed JSON payload.
+
+    Args:
+        system_prompt: System instructions for the model.
+        user_content: User content (augmented upstream with schema hints).
+        settings: LLM settings (model name, temperature).
+
+    Returns:
+        The decoded JSON value returned by the model.
+
+    Raises:
+        RuntimeError: If the OpenAI API key is not configured.
+        json.JSONDecodeError: If the response cannot be parsed as JSON.
+    """
     api_key = get_openai_api_key()
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not set")
@@ -53,6 +82,31 @@ def call_structured_llm(
     session_id: str | None,
     event_prefix: str,
 ) -> TModel:
+    """Call an LLM and return a validated Pydantic model instance.
+
+    This is the app's "structured output" helper:
+    - Logs a start/success/failure lifecycle with the given ``event_prefix``.
+    - Adds the target model's JSON schema as a hint to the prompt.
+    - Tries ``pydantic_ai.Agent`` first (if available) for typed structured results.
+    - Falls back to OpenAI Chat Completions and parses JSON, retrying once with stricter
+      "JSON only" instructions if parsing/validation fails.
+
+    Args:
+        system_prompt: System instructions for the model.
+        user_content: User prompt content (CV text, job description, etc.).
+        result_type: Pydantic model class to validate the response against.
+        settings: LLM settings (model name, temperature).
+        session_id: Optional session identifier for logging context.
+        event_prefix: Prefix used for structured log event names (e.g., ``"profiling"``).
+
+    Returns:
+        An instance of ``result_type`` validated from the model output.
+
+    Raises:
+        json.JSONDecodeError: If the model output cannot be parsed as JSON after retries.
+        pydantic.ValidationError: If parsed JSON does not conform to ``result_type`` after retries.
+        RuntimeError: If the underlying LLM call fails or the API key is missing.
+    """
     logger = get_logger(session_id)
     logger.info(
         f"{event_prefix}_started",
@@ -106,4 +160,3 @@ def call_structured_llm(
 
     logger.exception(f"{event_prefix}_failed", extra={"event_name": f"{event_prefix}_failed"})
     raise last_err or RuntimeError("LLM call failed")
-

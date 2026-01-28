@@ -225,22 +225,22 @@ Live URL:
 Prereqs: `gcloud` installed, authenticated, and the project set.
 
 ```bash
-gcloud config set project second-try-ml
+gcloud config set project PROJECT_ID
 gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com
 ```
 
 Build + push:
 
 ```bash
-gcloud builds submit --tag europe-west10-docker.pkg.dev/second-try-ml/aporia/aporia:latest
+gcloud builds submit --tag REGION-docker.pkg.dev/PROJECT_ID/aporia/aporia:latest
 ```
 
 Deploy:
 
 ```bash
 gcloud run deploy aporia \
-  --image europe-west10-docker.pkg.dev/second-try-ml/aporia/aporia:latest \
-  --region europe-west10 \
+  --image REGION-docker.pkg.dev/second-try-ml/aporia/aporia:latest \
+  --region REGION \
   --port 8080 \
   --allow-unauthenticated
 ```
@@ -249,14 +249,14 @@ Configure env vars (minimum required):
 
 ```bash
 gcloud run services update aporia \
-  --region europe-west10 \
+  --region REGION \
   --set-env-vars OPENAI_API_KEY=sk-...
 ```
 
 Get the service URL:
 
 ```bash
-gcloud run services describe aporia --region europe-west10 --format="value(status.url)"
+gcloud run services describe aporia --region REGION --format="value(status.url)"
 ```
 
 

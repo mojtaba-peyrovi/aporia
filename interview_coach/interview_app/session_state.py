@@ -8,12 +8,28 @@ from interview_app.models.schemas import FallacyHint, InterviewQuestion, ScoreCa
 
 @dataclass(frozen=True)
 class InterviewTurn:
+    """Represents one completed Q&A turn in an interview.
+
+    Attributes:
+        question: The interview question that was asked.
+        answer: The user's answer text.
+        scorecard: The evaluation of the answer.
+    """
+
     question: InterviewQuestion
     answer: str
     scorecard: ScoreCard
 
 
 def new_interview_state() -> dict[str, Any]:
+    """Create a fresh, default interview session state dict.
+
+    The returned dict is intended to be stored in a session (e.g., Streamlit session_state)
+    and mutated in-place by the helper functions in this module.
+
+    Returns:
+        A state dict initialized with default keys for interview flow and transcript.
+    """
     return {
         "job_description": "",
         "prompt_mode": "default",
@@ -34,6 +50,21 @@ def start_interview(
     question_id: int | None = None,
     question_order: int | None = None,
 ) -> None:
+    """Start an interview by seeding the first question into the session state.
+
+    Mutates ``state`` in-place, setting:
+    - ``interview_started`` to True
+    - ``current_question`` (as a serialized dict via ``model_dump()``)
+    - optional ``current_question_id`` / ``current_question_order``
+    - clears ``last_scorecard`` and ``last_fallacy_hint``
+    - ensures ``transcript`` exists as a list
+
+    Args:
+        state: The session state dict to mutate.
+        first_question: The first question to ask.
+        question_id: Optional identifier associated with the question (e.g., DB id).
+        question_order: Optional order number associated with the question.
+    """
     state["interview_started"] = True
     state["current_question"] = first_question.model_dump()
     state["current_question_id"] = question_id
@@ -51,6 +82,22 @@ def submit_answer(
     next_question: InterviewQuestion | None,
     fallacy_hint: FallacyHint | None = None,
 ) -> None:
+    """Record an answer for the current question and advance to the next question.
+
+    This validates and deserializes the current question from ``state["current_question"]``,
+    appends a new transcript entry, updates the "last" evaluation fields, and replaces the
+    current question with ``next_question`` (or clears it when None).
+
+    Raises:
+        ValueError: If there is no current question in the state to answer.
+
+    Args:
+        state: The session state dict to mutate.
+        answer: The user's answer text.
+        scorecard: The evaluation results for this answer.
+        next_question: The next question to ask, or None to end the interview.
+        fallacy_hint: Optional hint to record alongside the scorecard.
+    """
     if not state.get("current_question"):
         raise ValueError("No current question to answer")
 
@@ -82,6 +129,19 @@ def skip_question(
     *,
     next_question: InterviewQuestion | None,
 ) -> None:
+    """Mark the current question as skipped and advance to the next question.
+
+    Appends a transcript entry with ``is_skipped=True`` (and no answer/scorecard),
+    clears "last" evaluation fields, and sets ``current_question`` to ``next_question``
+    (or clears it when None).
+
+    Raises:
+        ValueError: If there is no current question in the state to skip.
+
+    Args:
+        state: The session state dict to mutate.
+        next_question: The next question to ask, or None to end the interview.
+    """
     if not state.get("current_question"):
         raise ValueError("No current question to skip")
 
@@ -107,6 +167,15 @@ def skip_question(
 
 
 def reset_interview(state: dict[str, Any]) -> None:
+    """Reset interview progress while preserving user/profile inputs.
+
+    This resets the state keys defined by :func:`new_interview_state` (clearing the
+    transcript and any in-progress question), but keeps certain user-provided fields
+    such as prompt mode, job description, and optional CV/JD/profile metadata.
+
+    Args:
+        state: The session state dict to mutate.
+    """
     keep_prompt_mode = state.get("prompt_mode", "default")
     keep_job_description = state.get("job_description", "")
     keep_cv_text = state.get("cv_text")

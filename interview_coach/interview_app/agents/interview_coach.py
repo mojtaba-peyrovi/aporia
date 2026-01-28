@@ -14,10 +14,28 @@ from interview_app.services.prompt_catalog import (
 
 
 def _safe_json(data: Any) -> str:
+    """Serialize data to JSON for prompt inclusion.
+
+    Uses ``ensure_ascii=False`` so that Unicode characters remain readable in the prompt.
+
+    Args:
+        data: Any JSON-serializable value.
+
+    Returns:
+        A JSON string representation of ``data``.
+    """
     return json.dumps(data, ensure_ascii=False)
 
 
 def _normalize_profile(profile: CandidateProfile | dict[str, Any] | None) -> dict[str, Any] | None:
+    """Normalize a candidate profile into a plain dict (or None).
+
+    Args:
+        profile: Candidate profile as a Pydantic model, a dict, or None.
+
+    Returns:
+        A JSON-serializable dict representation of the profile, or None.
+    """
     if profile is None:
         return None
     if isinstance(profile, CandidateProfile):
@@ -37,6 +55,29 @@ def generate_interview_question(
     prompt_mode: str,
     session_id: str | None = None,
 ) -> InterviewQuestion:
+    """Generate the next interview question as a structured :class:`InterviewQuestion`.
+
+    Builds a prompt containing the candidate profile, job description, and the transcript so
+    far. Optionally includes top skills/coverage and can enforce a specific ``focus_skill`` by
+    instructing the model to include it as a tag. As a final safeguard, if ``focus_skill`` is
+    set and the model fails to include it, this function appends it to ``question.tags``.
+
+    Args:
+        profile: Candidate profile as a Pydantic model, dict, or None.
+        job_description: Job description text (may be empty).
+        transcript: Transcript entries so far (may be empty).
+        top_skills: Optional list of skills to emphasize; when relevant, the model should use
+            these exact strings in ``tags``.
+        focus_skill: Optional single skill to prioritize assessing next; if provided, it should
+            appear exactly as one of the returned tags.
+        skill_coverage: Optional mapping of skill -> count of tagged questions so far.
+        settings: App settings containing LLM configuration.
+        prompt_mode: Which prompt template variant to use (validated by ``validate_prompt_mode``).
+        session_id: Optional session identifier to include in logs/telemetry.
+
+    Returns:
+        An :class:`InterviewQuestion` for the next turn.
+    """
     prompt_mode = validate_prompt_mode(prompt_mode)
     user_content = (
         "Create the next interview question.\n\n"
@@ -82,6 +123,25 @@ def evaluate_interview_answer(
     prompt_mode: str,
     session_id: str | None = None,
 ) -> ScoreCard:
+    """Evaluate a candidate answer and return a structured :class:`ScoreCard`.
+
+    Builds a prompt including the candidate profile, job description, current question (as
+    structured JSON), the candidate's answer, and the transcript so far. The prompt mode is
+    validated before selecting the system prompt template.
+
+    Args:
+        profile: Candidate profile as a Pydantic model, dict, or None.
+        job_description: Job description text (may be empty).
+        question: The current question as a Pydantic model or dict.
+        answer: The candidate's answer text.
+        transcript: Transcript entries so far (may be empty).
+        settings: App settings containing LLM configuration.
+        prompt_mode: Which prompt template variant to use (validated by ``validate_prompt_mode``).
+        session_id: Optional session identifier to include in logs/telemetry.
+
+    Returns:
+        A :class:`ScoreCard` with scores, strengths, improvements, red flags, and optional rewrite.
+    """
     prompt_mode = validate_prompt_mode(prompt_mode)
     question_obj = question if isinstance(question, InterviewQuestion) else InterviewQuestion.model_validate(question)
     user_content = (
